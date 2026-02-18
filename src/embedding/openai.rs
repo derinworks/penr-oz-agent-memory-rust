@@ -30,15 +30,29 @@ pub struct OpenAIProvider {
 }
 
 impl OpenAIProvider {
-    pub fn new(cfg: &ProviderConfig) -> Self {
-        Self {
+    pub fn new(cfg: &ProviderConfig) -> Result<Self, EmbeddingError> {
+        let auth_scheme = cfg.auth_scheme.as_deref().unwrap_or("bearer").to_string();
+        if !matches!(auth_scheme.as_str(), "bearer" | "api-key") {
+            return Err(EmbeddingError::ConfigError(format!(
+                "Unsupported auth_scheme '{auth_scheme}': expected \"bearer\" or \"api-key\""
+            )));
+        }
+
+        let raw_path = cfg.embeddings_path.as_deref().unwrap_or("/v1/embeddings");
+        let embeddings_path = if raw_path.starts_with('/') {
+            raw_path.to_string()
+        } else {
+            format!("/{raw_path}")
+        };
+
+        Ok(Self {
             client: reqwest::Client::new(),
             base_url: cfg.base_url.trim_end_matches('/').to_string(),
             model: cfg.model.clone(),
             api_key: cfg.api_key.clone().unwrap_or_default(),
-            auth_scheme: cfg.auth_scheme.clone().unwrap_or_else(|| "bearer".to_string()),
-            embeddings_path: cfg.embeddings_path.clone().unwrap_or_else(|| "/v1/embeddings".to_string()),
-        }
+            auth_scheme,
+            embeddings_path,
+        })
     }
 }
 
@@ -137,7 +151,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = OpenAIProvider::new(&make_config(&server.uri()));
+        let provider = OpenAIProvider::new(&make_config(&server.uri())).unwrap();
         let embedding = provider.embed("hello world").await.unwrap();
         assert_eq!(embedding, vec![0.4, 0.5, 0.6]);
     }
@@ -152,7 +166,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = OpenAIProvider::new(&make_config(&server.uri()));
+        let provider = OpenAIProvider::new(&make_config(&server.uri())).unwrap();
         let result = provider.embed("hello world").await;
         assert!(matches!(result, Err(EmbeddingError::AuthenticationError)));
     }
@@ -171,7 +185,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = OpenAIProvider::new(&make_config(&server.uri()));
+        let provider = OpenAIProvider::new(&make_config(&server.uri())).unwrap();
         let result = provider.embed("hello world").await;
         assert!(matches!(result, Err(EmbeddingError::InvalidResponse(_))));
     }
@@ -199,7 +213,7 @@ mod tests {
             auth_scheme: Some("api-key".to_string()),
             embeddings_path: None,
         };
-        let provider = OpenAIProvider::new(&cfg);
+        let provider = OpenAIProvider::new(&cfg).unwrap();
         let embedding = provider.embed("hello world").await.unwrap();
         assert_eq!(embedding, vec![0.1, 0.2]);
     }
@@ -227,8 +241,49 @@ mod tests {
             auth_scheme: None,
             embeddings_path: Some(custom_path.to_string()),
         };
-        let provider = OpenAIProvider::new(&cfg);
+        let provider = OpenAIProvider::new(&cfg).unwrap();
         let embedding = provider.embed("hello world").await.unwrap();
         assert_eq!(embedding, vec![0.3, 0.4]);
+    }
+
+    #[test]
+    fn new_returns_config_error_for_unknown_auth_scheme() {
+        let cfg = ProviderConfig {
+            provider_type: "openai".to_string(),
+            base_url: "https://api.openai.com".to_string(),
+            model: "text-embedding-3-small".to_string(),
+            api_key: Some("key".to_string()),
+            auth_scheme: Some("api_key".to_string()), // typo: underscore instead of hyphen
+            embeddings_path: None,
+        };
+        let result = OpenAIProvider::new(&cfg);
+        assert!(matches!(result, Err(EmbeddingError::ConfigError(_))));
+    }
+
+    #[tokio::test]
+    async fn embed_normalises_embeddings_path_without_leading_slash() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/embeddings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"embedding": [0.5_f32, 0.6_f32], "index": 0, "object": "embedding"}],
+                "model": "text-embedding-3-small",
+                "object": "list"
+            })))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig {
+            provider_type: "openai".to_string(),
+            base_url: server.uri(),
+            model: "text-embedding-3-small".to_string(),
+            api_key: None,
+            auth_scheme: None,
+            embeddings_path: Some("v1/embeddings".to_string()), // no leading slash
+        };
+        let provider = OpenAIProvider::new(&cfg).unwrap();
+        let embedding = provider.embed("hello world").await.unwrap();
+        assert_eq!(embedding, vec![0.5, 0.6]);
     }
 }

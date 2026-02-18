@@ -34,7 +34,7 @@ pub fn build_provider(
 ) -> Result<DynEmbeddingProvider, EmbeddingError> {
     match cfg.provider_type.as_str() {
         "ollama" => Ok(Arc::new(ollama::OllamaProvider::new(cfg))),
-        "openai" => Ok(Arc::new(openai::OpenAIProvider::new(cfg))),
+        "openai" => Ok(Arc::new(openai::OpenAIProvider::new(cfg)?)),
         "claude" => Ok(Arc::new(claude::ClaudeProvider::new(cfg))),
         unknown => Err(EmbeddingError::ConfigError(format!(
             "Unknown provider type: '{unknown}'"
