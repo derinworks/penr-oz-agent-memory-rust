@@ -1,3 +1,23 @@
 [server]
 host = "127.0.0.1"
 port = 8080
+
+[embedding]
+default_provider = "ollama"
+
+[embedding.providers.ollama]
+type = "ollama"
+base_url = "http://localhost:11434"
+model = "nomic-embed-text"
+
+[embedding.providers.openai]
+type = "openai"
+base_url = "https://api.openai.com"
+api_key = ""
+model = "text-embedding-3-small"
+
+[embedding.providers.claude]
+type = "claude"
+base_url = "https://api.anthropic.com"
+api_key = ""
+model = "voyage-3"

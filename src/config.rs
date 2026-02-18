@@ -1,21 +1,51 @@
-use serde::Deserialize;
-use std::fs;
+use std::{collections::HashMap, fs};
 
-#[derive(Debug, Deserialize)]
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Config {
     pub server: ServerConfig,
+    pub embedding: EmbeddingConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct EmbeddingConfig {
+    pub default_provider: String,
+    pub providers: HashMap<String, ProviderConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct ProviderConfig {
+    #[serde(rename = "type")]
+    pub provider_type: String,
+    pub base_url: String,
+    pub model: String,
+    pub api_key: Option<String>,
+}
+
 impl Config {
     pub fn load(path: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let content = fs::read_to_string(path)?;
-        let config: Config = toml::from_str(&content)?;
+        let contents = fs::read_to_string(path)?;
+        let config: Config = toml::from_str(&contents)?;
         Ok(config)
+    }
+
+    pub fn load_or_default() -> Self {
+        Self::load("config.toml").unwrap_or_else(|_| Config {
+            server: ServerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 8080,
+            },
+            embedding: EmbeddingConfig {
+                default_provider: "ollama".to_string(),
+                providers: HashMap::new(),
+            },
+        })
     }
 }
