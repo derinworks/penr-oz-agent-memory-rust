@@ -5,9 +5,13 @@
 //! Any endpoint that follows the OpenAI embeddings contract can be used here,
 //! including Azure OpenAI, LocalAI, vLLM, and similar proxies.
 //!
-//! Request  → POST {base_url}/v1/embeddings
+//! Request  → POST {base_url}{embeddings_path}
 //! Body     → `{"model": "…", "input": "…"}`
 //! Response → `{"data": [{"embedding": […]}]}`
+//!
+//! Auth schemes (configured via `auth_scheme`):
+//! - `"bearer"` (default) → `Authorization: Bearer <api_key>`
+//! - `"api-key"`          → `api-key: <api_key>` (Azure OpenAI style)
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -21,6 +25,8 @@ pub struct OpenAIProvider {
     base_url: String,
     model: String,
     api_key: String,
+    auth_scheme: String,
+    embeddings_path: String,
 }
 
 impl OpenAIProvider {
@@ -30,6 +36,8 @@ impl OpenAIProvider {
             base_url: cfg.base_url.trim_end_matches('/').to_string(),
             model: cfg.model.clone(),
             api_key: cfg.api_key.clone().unwrap_or_default(),
+            auth_scheme: cfg.auth_scheme.clone().unwrap_or_else(|| "bearer".to_string()),
+            embeddings_path: cfg.embeddings_path.clone().unwrap_or_else(|| "/v1/embeddings".to_string()),
         }
     }
 }
@@ -53,7 +61,7 @@ struct OpenAIResponse {
 #[async_trait]
 impl EmbeddingProvider for OpenAIProvider {
     async fn embed(&self, text: &str) -> Result<Embedding, EmbeddingError> {
-        let url = format!("{}/v1/embeddings", self.base_url);
+        let url = format!("{}{}", self.base_url, self.embeddings_path);
         let body = OpenAIRequest {
             model: &self.model,
             input: text,
@@ -61,7 +69,10 @@ impl EmbeddingProvider for OpenAIProvider {
 
         let mut request = self.client.post(&url).json(&body);
         if !self.api_key.is_empty() {
-            request = request.bearer_auth(&self.api_key);
+            request = match self.auth_scheme.as_str() {
+                "api-key" => request.header("api-key", &self.api_key),
+                _ => request.bearer_auth(&self.api_key),
+            };
         }
 
         let response = request.send().await?;
@@ -94,7 +105,7 @@ impl EmbeddingProvider for OpenAIProvider {
 #[cfg(test)]
 mod tests {
     use wiremock::{
-        matchers::{method, path},
+        matchers::{header, method, path},
         Mock, MockServer, ResponseTemplate,
     };
 
@@ -107,6 +118,8 @@ mod tests {
             base_url: base_url.to_string(),
             model: "text-embedding-3-small".to_string(),
             api_key: Some("test-key".to_string()),
+            auth_scheme: None,
+            embeddings_path: None,
         }
     }
 
@@ -161,5 +174,61 @@ mod tests {
         let provider = OpenAIProvider::new(&make_config(&server.uri()));
         let result = provider.embed("hello world").await;
         assert!(matches!(result, Err(EmbeddingError::InvalidResponse(_))));
+    }
+
+    #[tokio::test]
+    async fn embed_uses_api_key_header_scheme() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/embeddings"))
+            .and(header("api-key", "test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"embedding": [0.1_f32, 0.2_f32], "index": 0, "object": "embedding"}],
+                "model": "text-embedding-3-small",
+                "object": "list"
+            })))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig {
+            provider_type: "openai".to_string(),
+            base_url: server.uri(),
+            model: "text-embedding-3-small".to_string(),
+            api_key: Some("test-key".to_string()),
+            auth_scheme: Some("api-key".to_string()),
+            embeddings_path: None,
+        };
+        let provider = OpenAIProvider::new(&cfg);
+        let embedding = provider.embed("hello world").await.unwrap();
+        assert_eq!(embedding, vec![0.1, 0.2]);
+    }
+
+    #[tokio::test]
+    async fn embed_uses_custom_embeddings_path() {
+        let server = MockServer::start().await;
+        let custom_path = "/openai/deployments/my-model/embeddings";
+
+        Mock::given(method("POST"))
+            .and(path(custom_path))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": [{"embedding": [0.3_f32, 0.4_f32], "index": 0, "object": "embedding"}],
+                "model": "text-embedding-3-small",
+                "object": "list"
+            })))
+            .mount(&server)
+            .await;
+
+        let cfg = ProviderConfig {
+            provider_type: "openai".to_string(),
+            base_url: server.uri(),
+            model: "text-embedding-3-small".to_string(),
+            api_key: Some("test-key".to_string()),
+            auth_scheme: None,
+            embeddings_path: Some(custom_path.to_string()),
+        };
+        let provider = OpenAIProvider::new(&cfg);
+        let embedding = provider.embed("hello world").await.unwrap();
+        assert_eq!(embedding, vec![0.3, 0.4]);
     }
 }

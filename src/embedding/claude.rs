@@ -116,6 +116,8 @@ mod tests {
             base_url: base_url.to_string(),
             model: "voyage-3".to_string(),
             api_key: Some("test-anthropic-key".to_string()),
+            auth_scheme: None,
+            embeddings_path: None,
         }
     }
 
@@ -144,6 +146,8 @@ mod tests {
             base_url: "http://localhost:11434".to_string(),
             model: "voyage-3".to_string(),
             api_key: None,
+            auth_scheme: None,
+            embeddings_path: None,
         });
         let result = provider.embed("hello world").await;
         assert!(matches!(result, Err(EmbeddingError::AuthenticationError)));

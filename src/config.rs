@@ -27,6 +27,13 @@ pub struct ProviderConfig {
     pub base_url: String,
     pub model: String,
     pub api_key: Option<String>,
+    /// Auth header scheme used when `api_key` is set.
+    /// `"bearer"` (default) → `Authorization: Bearer <key>`
+    /// `"api-key"`          → `api-key: <key>` (Azure OpenAI style)
+    pub auth_scheme: Option<String>,
+    /// Path appended to `base_url` to reach the embeddings endpoint.
+    /// Defaults to `"/v1/embeddings"` when absent.
+    pub embeddings_path: Option<String>,
 }
 
 impl Config {

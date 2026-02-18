@@ -88,6 +88,8 @@ mod tests {
             base_url: base_url.to_string(),
             model: "nomic-embed-text".to_string(),
             api_key: None,
+            auth_scheme: None,
+            embeddings_path: None,
         }
     }
 

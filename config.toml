@@ -15,9 +15,20 @@ type = "openai"
 base_url = "https://api.openai.com"
 api_key = ""
 model = "text-embedding-3-small"
+# auth_scheme = "bearer"          # default; uses Authorization: Bearer <api_key>
+# embeddings_path = "/v1/embeddings"  # default
 
 [embedding.providers.claude]
 type = "claude"
 base_url = "https://api.anthropic.com"
 api_key = ""
 model = "voyage-3"
+
+# Example: Azure OpenAI provider (OpenAI-compatible with different auth and path)
+# [embedding.providers.azure]
+# type = "openai"
+# base_url = "https://<resource>.openai.azure.com"
+# api_key = ""
+# model = "text-embedding-3-small"
+# auth_scheme = "api-key"
+# embeddings_path = "/openai/deployments/<deployment>/embeddings?api-version=2024-02-01"
