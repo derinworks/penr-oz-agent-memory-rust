@@ -42,10 +42,6 @@ struct OllamaResponse {
 
 #[async_trait]
 impl EmbeddingProvider for OllamaProvider {
-    fn name(&self) -> &str {
-        "ollama"
-    }
-
     async fn embed(&self, text: &str) -> Result<Embedding, EmbeddingError> {
         let url = format!("{}/api/embed", self.base_url);
         let body = OllamaRequest {

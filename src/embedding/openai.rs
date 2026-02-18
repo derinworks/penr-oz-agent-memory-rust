@@ -52,10 +52,6 @@ struct OpenAIResponse {
 
 #[async_trait]
 impl EmbeddingProvider for OpenAIProvider {
-    fn name(&self) -> &str {
-        "openai"
-    }
-
     async fn embed(&self, text: &str) -> Result<Embedding, EmbeddingError> {
         let url = format!("{}/v1/embeddings", self.base_url);
         let body = OpenAIRequest {

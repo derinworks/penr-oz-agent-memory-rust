@@ -55,10 +55,6 @@ struct ClaudeResponse {
 
 #[async_trait]
 impl EmbeddingProvider for ClaudeProvider {
-    fn name(&self) -> &str {
-        "claude"
-    }
-
     async fn embed(&self, text: &str) -> Result<Embedding, EmbeddingError> {
         if self.api_key.is_empty() {
             return Err(EmbeddingError::AuthenticationError);

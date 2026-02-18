@@ -20,9 +20,6 @@ pub type Embedding = Vec<f32>;
 /// async tasks and Axum handlers.
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
-    /// Return a human-readable name for this provider (e.g. "ollama", "openai").
-    fn name(&self) -> &str;
-
     /// Generate an embedding for the given input text.
     async fn embed(&self, text: &str) -> Result<Embedding, EmbeddingError>;
 }

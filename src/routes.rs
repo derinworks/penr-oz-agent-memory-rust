@@ -87,8 +87,8 @@ pub async fn embed(
         ));
     }
 
-    let provider_name = query.provider.as_deref();
-    let provider = state.registry.get(provider_name)?;
+    let provider_key = query.provider.as_deref().unwrap_or(state.registry.default_provider());
+    let provider = state.registry.get(Some(provider_key))?;
 
     let embedding = provider.embed(&body.text).await?;
     let dimensions = embedding.len();
@@ -96,7 +96,7 @@ pub async fn embed(
     Ok((
         StatusCode::OK,
         Json(EmbedResponse {
-            provider: provider.name().to_string(),
+            provider: provider_key.to_string(),
             dimensions,
             embedding,
         }),

@@ -3,7 +3,7 @@ mod embedding;
 mod error;
 mod routes;
 
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::{IpAddr, SocketAddr}, sync::Arc};
 
 use axum::{routing::{get, post}, Router};
 use tracing::info;
@@ -44,9 +44,8 @@ async fn main() {
         .route("/api/embed", post(embed))
         .with_state(state);
 
-    let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port)
-        .parse()
-        .expect("Invalid server address");
+    let host: IpAddr = config.server.host.parse().expect("Invalid server host address");
+    let addr = SocketAddr::from((host, config.server.port));
 
     info!(%addr, "Starting server");
 
