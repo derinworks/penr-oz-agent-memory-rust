@@ -1,33 +1,59 @@
 mod config;
+mod embedding;
+mod error;
+mod routes;
 
-use axum::{Router, routing::get, http::StatusCode};
-use std::net::{IpAddr, SocketAddr};
+use std::{net::{IpAddr, SocketAddr}, sync::Arc};
+
+use axum::{routing::{get, post}, Router};
 use tracing::info;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+use crate::{
+    config::Config,
+    embedding::ProviderRegistry,
+    routes::{embed, health, AppState},
+};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse().unwrap()))
+    // Initialise structured logging; fall back to INFO if RUST_LOG is unset.
+    tracing_subscriber::registry()
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(tracing_subscriber::fmt::layer())
         .init();
 
     let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".to_string());
-    let cfg = config::Config::load(&config_path).expect("Failed to load config");
-    info!("Loaded config: {:?}", cfg);
+    let config = Config::load(&config_path)
+        .unwrap_or_else(|e| panic!("Failed to load configuration from '{config_path}': {e}"));
+    info!("Loaded configuration from '{config_path}'");
 
-    let host: IpAddr = cfg.server.host.parse().expect("Invalid server host address");
-    let addr = SocketAddr::from((host, cfg.server.port));
-    let app = Router::new().route("/health", get(health));
+    let registry = ProviderRegistry::from_config(&config.embedding)
+        .expect("Failed to initialise embedding provider registry");
 
-    info!("Starting server on {}", addr);
+    info!(
+        default = %registry.default_provider(),
+        providers = ?registry.provider_names(),
+        "Embedding provider registry ready"
+    );
+
+    let state = Arc::new(AppState { registry });
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/api/embed", post(embed))
+        .with_state(state);
+
+    let host: IpAddr = config.server.host.parse().expect("Invalid server host address");
+    let addr = SocketAddr::from((host, config.server.port));
+
+    info!(%addr, "Starting server");
+
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("Failed to bind address");
+        .expect("Failed to bind listener");
+
     axum::serve(listener, app)
         .await
         .expect("Server error");
-}
-
-async fn health() -> StatusCode {
-    StatusCode::OK
 }
