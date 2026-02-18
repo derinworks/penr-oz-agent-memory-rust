@@ -59,6 +59,13 @@ impl ProviderRegistry {
             let provider = build_provider(name, provider_cfg)?;
             providers.insert(name.clone(), provider);
         }
+        if !providers.contains_key(&cfg.default_provider) {
+            return Err(EmbeddingError::ConfigError(format!(
+                "Default provider '{}' is not registered",
+                cfg.default_provider
+            )));
+        }
+
         Ok(Self {
             providers,
             default: cfg.default_provider.clone(),

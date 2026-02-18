@@ -82,7 +82,7 @@ pub async fn embed(
     Json(body): Json<EmbedRequest>,
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if body.text.is_empty() {
-        return Err(EmbeddingError::InvalidResponse(
+        return Err(EmbeddingError::BadRequest(
             "Field 'text' must not be empty".to_string(),
         ));
     }

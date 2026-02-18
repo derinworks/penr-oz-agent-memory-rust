@@ -36,16 +36,4 @@ impl Config {
         Ok(config)
     }
 
-    pub fn load_or_default() -> Self {
-        Self::load("config.toml").unwrap_or_else(|_| Config {
-            server: ServerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 8080,
-            },
-            embedding: EmbeddingConfig {
-                default_provider: "ollama".to_string(),
-                providers: HashMap::new(),
-            },
-        })
-    }
 }

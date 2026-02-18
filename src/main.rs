@@ -24,7 +24,8 @@ async fn main() {
         .init();
 
     let config_path = std::env::var("CONFIG_PATH").unwrap_or_else(|_| "config.toml".to_string());
-    let config = Config::load(&config_path).unwrap_or_else(|_| Config::load_or_default());
+    let config = Config::load(&config_path)
+        .unwrap_or_else(|e| panic!("Failed to load configuration from '{config_path}': {e}"));
     info!("Loaded configuration from '{config_path}'");
 
     let registry = ProviderRegistry::from_config(&config.embedding)

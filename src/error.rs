@@ -25,11 +25,15 @@ pub enum EmbeddingError {
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
 }
 
 impl IntoResponse for EmbeddingError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
+            EmbeddingError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             EmbeddingError::ProviderNotFound(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             EmbeddingError::AuthenticationError => {
                 (StatusCode::UNAUTHORIZED, self.to_string())
