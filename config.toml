@@ -34,9 +34,10 @@ model = "voyage-3"
 # embeddings_path = "/openai/deployments/<deployment>/embeddings?api-version=2024-02-01"
 
 [qdrant]
-# URL of the Qdrant instance (Docker default: http://localhost:6334)
+# URL of the Qdrant instance (Docker REST default: http://localhost:6333)
+# Port 6333 is the HTTP REST API; 6334 is the gRPC port.
 # Override with QDRANT_URL environment variable.
-url = "http://localhost:6334"
+url = "http://localhost:6333"
 # Collection to store agent memories in.
 # Override with QDRANT_COLLECTION environment variable.
 collection = "agent_memory"

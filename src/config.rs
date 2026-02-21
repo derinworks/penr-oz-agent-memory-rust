@@ -39,7 +39,8 @@ pub struct ProviderConfig {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct QdrantConfig {
-    /// URL of the Qdrant instance, e.g. `http://localhost:6334`.
+    /// URL of the Qdrant instance, e.g. `http://localhost:6333`.
+    /// Port 6333 is the HTTP REST API; 6334 is the gRPC port.
     /// Can be overridden by the `QDRANT_URL` environment variable.
     pub url: String,
     /// Name of the Qdrant collection to use.
@@ -61,7 +62,7 @@ fn default_dimensions() -> u32 {
 impl Default for QdrantConfig {
     fn default() -> Self {
         Self {
-            url: "http://localhost:6334".to_string(),
+            url: "http://localhost:6333".to_string(),
             collection: "agent_memory".to_string(),
             api_key: None,
             dimensions: default_dimensions(),
@@ -74,20 +75,24 @@ impl Config {
         let contents = fs::read_to_string(path)?;
         let mut config: Config = toml::from_str(&contents)?;
 
-        // Override / create Qdrant config from environment variables.
-        // Setting QDRANT_URL is sufficient to enable Qdrant even without a
-        // [qdrant] section in the config file.
+        // QDRANT_URL is the sole trigger for enabling Qdrant when no [qdrant]
+        // section is present in the config file.  The other two variables only
+        // override fields on a config that is already present (either from the
+        // TOML or because QDRANT_URL was set above), so they can never
+        // accidentally activate Qdrant on their own.
         if let Ok(url) = std::env::var("QDRANT_URL") {
             let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
             qdrant.url = url;
         }
         if let Ok(collection) = std::env::var("QDRANT_COLLECTION") {
-            let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
-            qdrant.collection = collection;
+            if let Some(qdrant) = config.qdrant.as_mut() {
+                qdrant.collection = collection;
+            }
         }
         if let Ok(api_key) = std::env::var("QDRANT_API_KEY") {
-            let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
-            qdrant.api_key = Some(api_key);
+            if let Some(qdrant) = config.qdrant.as_mut() {
+                qdrant.api_key = Some(api_key);
+            }
         }
 
         Ok(config)
