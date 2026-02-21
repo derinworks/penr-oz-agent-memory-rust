@@ -52,3 +52,44 @@ impl IntoResponse for EmbeddingError {
         (status, Json(json!({ "error": message }))).into_response()
     }
 }
+
+#[derive(Debug, Error)]
+pub enum VectorStoreError {
+    #[error("HTTP request failed: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Qdrant API error: {status} - {message}")]
+    Api { status: u16, message: String },
+
+    #[error("Invalid response from Qdrant: {0}")]
+    InvalidResponse(String),
+
+    #[error("Vector store not configured")]
+    NotConfigured,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+
+    #[error("Embedding error: {0}")]
+    Embedding(#[from] EmbeddingError),
+}
+
+impl IntoResponse for VectorStoreError {
+    fn into_response(self) -> Response {
+        // Delegate to the embedded EmbeddingError's own IntoResponse impl.
+        if let VectorStoreError::Embedding(e) = self {
+            return e.into_response();
+        }
+
+        let status = match &self {
+            VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+            VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            VectorStoreError::Api { status, .. } => {
+                StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+
+        (status, Json(json!({ "error": self.to_string() }))).into_response()
+    }
+}
