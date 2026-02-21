@@ -32,3 +32,18 @@ model = "voyage-3"
 # model = "text-embedding-3-small"
 # auth_scheme = "api-key"
 # embeddings_path = "/openai/deployments/<deployment>/embeddings?api-version=2024-02-01"
+
+[qdrant]
+# URL of the Qdrant instance (Docker default: http://localhost:6334)
+# Override with QDRANT_URL environment variable.
+url = "http://localhost:6334"
+# Collection to store agent memories in.
+# Override with QDRANT_COLLECTION environment variable.
+collection = "agent_memory"
+# Dimensionality must match the embedding model output.
+# nomic-embed-text (ollama default) → 768
+# text-embedding-3-small (openai)  → 1536
+# voyage-3 (claude/anthropic)      → 1024
+dimensions = 768
+# api_key = ""   # Uncomment for Qdrant Cloud or auth-enabled instances.
+                 # Override with QDRANT_API_KEY environment variable.

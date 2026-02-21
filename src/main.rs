@@ -2,6 +2,7 @@ mod config;
 mod embedding;
 mod error;
 mod routes;
+mod vector_store;
 
 use std::{net::{IpAddr, SocketAddr}, sync::Arc};
 
@@ -12,7 +13,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 use crate::{
     config::Config,
     embedding::ProviderRegistry,
-    routes::{embed, health, AppState},
+    routes::{embed, health, search_memory, store_memory, AppState},
+    vector_store::QdrantStore,
 };
 
 #[tokio::main]
@@ -37,11 +39,35 @@ async fn main() {
         "Embedding provider registry ready"
     );
 
-    let state = Arc::new(AppState { registry });
+    // Initialise the Qdrant vector store if configured.
+    let vector_store = if let Some(qdrant_cfg) = &config.qdrant {
+        let store = Arc::new(QdrantStore::new(qdrant_cfg));
+        store
+            .ensure_collection()
+            .await
+            .unwrap_or_else(|e| panic!("Failed to initialise Qdrant collection: {e}"));
+        info!(
+            url = %qdrant_cfg.url,
+            collection = %qdrant_cfg.collection,
+            dimensions = qdrant_cfg.dimensions,
+            "Qdrant vector store ready"
+        );
+        Some(store)
+    } else {
+        info!("Qdrant not configured – /api/memory and /api/search are disabled");
+        None
+    };
+
+    let state = Arc::new(AppState {
+        registry,
+        vector_store,
+    });
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/embed", post(embed))
+        .route("/api/memory", post(store_memory))
+        .route("/api/search", post(search_memory))
         .with_state(state);
 
     let host: IpAddr = config.server.host.parse().expect("Invalid server host address");
