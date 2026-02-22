@@ -143,7 +143,10 @@ impl QdrantStore {
 
                 if !create_resp.status().is_success() {
                     let status = create_resp.status().as_u16();
-                    let message = create_resp.text().await.unwrap_or_default();
+                    let message = create_resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "<failed to read response body>".to_string());
                     return Err(VectorStoreError::Api { status, message });
                 }
 
@@ -155,7 +158,10 @@ impl QdrantStore {
                 Ok(())
             }
             status => {
-                let message = resp.text().await.unwrap_or_default();
+                let message = resp
+                    .text()
+                    .await
+                    .unwrap_or_else(|_| "<failed to read response body>".to_string());
                 Err(VectorStoreError::Api { status, message })
             }
         }
@@ -187,7 +193,7 @@ impl QdrantStore {
         match payload.entry("text".to_string()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 return Err(VectorStoreError::BadRequest(
-                    "'text' is a reserved metadata key".to_string(),
+                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding".to_string(),
                 ));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -215,7 +221,10 @@ impl QdrantStore {
 
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
-            let message = resp.text().await.unwrap_or_default();
+            let message = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
             return Err(VectorStoreError::Api { status, message });
         }
 
@@ -256,7 +265,10 @@ impl QdrantStore {
 
         if !resp.status().is_success() {
             let status = resp.status().as_u16();
-            let message = resp.text().await.unwrap_or_default();
+            let message = resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read response body>".to_string());
             return Err(VectorStoreError::Api { status, message });
         }
 

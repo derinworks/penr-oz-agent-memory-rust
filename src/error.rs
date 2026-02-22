@@ -87,7 +87,12 @@ impl IntoResponse for VectorStoreError {
             VectorStoreError::Api { status, .. } => {
                 StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
             }
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
+            VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            // Embedding variant is handled by the early-return above and is
+            // unreachable here, but listed explicitly to keep the match exhaustive.
+            VectorStoreError::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
         (status, Json(json!({ "error": self.to_string() }))).into_response()
