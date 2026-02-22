@@ -258,27 +258,7 @@ impl QdrantStore {
         let results = parsed
             .result
             .into_iter()
-            .map(|hit| {
-                let id = match &hit.id {
-                    Value::String(s) => s.clone(),
-                    Value::Number(n) => n.to_string(),
-                    other => other.to_string(),
-                };
-                let text = hit
-                    .payload
-                    .get("text")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let mut metadata = hit.payload;
-                metadata.remove("text");
-                SearchResult {
-                    id,
-                    score: hit.score,
-                    text,
-                    metadata,
-                }
-            })
+            .map(SearchResult::from)
             .collect();
 
         Ok(results)
@@ -300,6 +280,32 @@ struct QdrantHit {
     id: Value,
     score: f32,
     payload: HashMap<String, Value>,
+}
+
+impl From<QdrantHit> for SearchResult {
+    fn from(mut hit: QdrantHit) -> Self {
+        let id = match hit.id {
+            Value::String(s) => s,
+            Value::Number(n) => n.to_string(),
+            other => other.to_string(),
+        };
+        // `remove` extracts "text" in a single lookup and transfers ownership,
+        // leaving the rest of the payload as metadata without a second pass.
+        let text = hit
+            .payload
+            .remove("text")
+            .and_then(|v| match v {
+                Value::String(s) => Some(s),
+                _ => None,
+            })
+            .unwrap_or_default();
+        SearchResult {
+            id,
+            score: hit.score,
+            text,
+            metadata: hit.payload,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

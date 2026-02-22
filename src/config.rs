@@ -84,13 +84,11 @@ impl Config {
             let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
             qdrant.url = url;
         }
-        if let Ok(collection) = std::env::var("QDRANT_COLLECTION") {
-            if let Some(qdrant) = config.qdrant.as_mut() {
+        if let Some(qdrant) = config.qdrant.as_mut() {
+            if let Ok(collection) = std::env::var("QDRANT_COLLECTION") {
                 qdrant.collection = collection;
             }
-        }
-        if let Ok(api_key) = std::env::var("QDRANT_API_KEY") {
-            if let Some(qdrant) = config.qdrant.as_mut() {
+            if let Ok(api_key) = std::env::var("QDRANT_API_KEY") {
                 qdrant.api_key = Some(api_key);
             }
         }
