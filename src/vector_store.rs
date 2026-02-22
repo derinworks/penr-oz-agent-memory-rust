@@ -163,12 +163,7 @@ impl QdrantStore {
                     .map_err(VectorStoreError::Http)?;
 
                 if !create_resp.status().is_success() {
-                    let status = create_resp.status().as_u16();
-                    let message = create_resp
-                        .text()
-                        .await
-                        .unwrap_or_else(|_| "<failed to read response body>".to_string());
-                    return Err(VectorStoreError::Api { status, message });
+                    return Err(api_error(create_resp).await);
                 }
 
                 info!(
@@ -178,13 +173,7 @@ impl QdrantStore {
                 );
                 Ok(())
             }
-            status => {
-                let message = resp
-                    .text()
-                    .await
-                    .unwrap_or_else(|_| "<failed to read response body>".to_string());
-                Err(VectorStoreError::Api { status, message })
-            }
+            _ => Err(api_error(resp).await),
         }
     }
 
@@ -241,12 +230,7 @@ impl QdrantStore {
             .map_err(VectorStoreError::Http)?;
 
         if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let message = resp
-                .text()
-                .await
-                .unwrap_or_else(|_| "<failed to read response body>".to_string());
-            return Err(VectorStoreError::Api { status, message });
+            return Err(api_error(resp).await);
         }
 
         Ok(point_id)
@@ -291,12 +275,7 @@ impl QdrantStore {
             .map_err(VectorStoreError::Http)?;
 
         if !resp.status().is_success() {
-            let status = resp.status().as_u16();
-            let message = resp
-                .text()
-                .await
-                .unwrap_or_else(|_| "<failed to read response body>".to_string());
-            return Err(VectorStoreError::Api { status, message });
+            return Err(api_error(resp).await);
         }
 
         let parsed: QdrantSearchResponse = resp.json().await.map_err(|e| {
@@ -311,6 +290,23 @@ impl QdrantStore {
 
         Ok(results)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Convert a non-2xx [`reqwest::Response`] into a [`VectorStoreError::Api`].
+///
+/// Reads the response body for the error message, falling back to a
+/// placeholder string if the body cannot be read.
+async fn api_error(resp: reqwest::Response) -> VectorStoreError {
+    let status = resp.status().as_u16();
+    let message = resp
+        .text()
+        .await
+        .unwrap_or_else(|_| "<failed to read response body>".to_string());
+    VectorStoreError::Api { status, message }
 }
 
 // ---------------------------------------------------------------------------
