@@ -50,5 +50,9 @@ model = "voyage-3"
 # text-embedding-3-small (openai)  → 1536
 # voyage-3 (claude/anthropic)      → 1024
 # dimensions = 768
+# Distance metric used when creating the collection.
+# Valid values: "Cosine" (default), "Euclid", "Dot".
+# Choose to match your embedding model's geometry.
+# distance = "Cosine"
 # api_key = ""   # Uncomment for Qdrant Cloud or auth-enabled instances.
 #                # Override with QDRANT_API_KEY environment variable.

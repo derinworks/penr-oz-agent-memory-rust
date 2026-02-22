@@ -3,7 +3,7 @@
 //! This module provides a lightweight REST client for Qdrant that supports:
 //! - Automatic collection creation on startup (with exponential-backoff retry)
 //! - Upserting embeddings with arbitrary JSON metadata
-//! - Querying by vector similarity (cosine distance)
+//! - Querying by vector similarity (configurable distance metric)
 //!
 //! API reference: <https://qdrant.tech/documentation/interfaces/#api-reference>
 //!
@@ -33,7 +33,9 @@ use crate::{config::QdrantConfig, error::VectorStoreError};
 pub struct SearchResult {
     /// The point's unique identifier (UUID string).
     pub id: String,
-    /// Cosine similarity score in the range \[-1, 1\]; higher is more similar.
+    /// Similarity score returned by Qdrant; higher means more similar.
+    /// The range depends on the collection's distance metric
+    /// (`Cosine` → \[-1, 1\], `Dot` → unbounded, `Euclid` → \[0, ∞\] inverted).
     pub score: f32,
     /// The original text that was embedded.
     pub text: String,
@@ -51,16 +53,22 @@ pub struct QdrantStore {
     collection: String,
     api_key: Option<String>,
     dimensions: u32,
+    distance: String,
 }
 
 impl QdrantStore {
     pub fn new(cfg: &QdrantConfig) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .build()
+            .expect("Failed to build Qdrant HTTP client");
         Self {
-            client: Client::new(),
+            client,
             base_url: cfg.url.trim_end_matches('/').to_string(),
             collection: cfg.collection.clone(),
             api_key: cfg.api_key.clone(),
             dimensions: cfg.dimensions,
+            distance: cfg.distance.clone(),
         }
     }
 
@@ -86,7 +94,8 @@ impl QdrantStore {
     /// Ensure the configured collection exists, creating it if necessary.
     ///
     /// Retries up to 4 times with exponential backoff (1 s, 2 s, 4 s, 8 s)
-    /// when Qdrant is not yet reachable (network errors only).
+    /// on transient failures: network errors, HTTP 429 (rate-limited), and
+    /// HTTP 503 (service temporarily unavailable).
     pub async fn ensure_collection(&self) -> Result<(), VectorStoreError> {
         let mut attempts = 0u32;
         let max_attempts = 5;
@@ -95,7 +104,6 @@ impl QdrantStore {
             attempts += 1;
             match self.try_ensure_collection().await {
                 Ok(()) => return Ok(()),
-                // Retry only on transient network errors, not API-level errors.
                 Err(VectorStoreError::Http(e)) if attempts < max_attempts => {
                     let wait_secs = 2u64.pow(attempts - 1); // 1, 2, 4, 8 …
                     warn!(
@@ -103,6 +111,19 @@ impl QdrantStore {
                         wait_secs,
                         error = %e,
                         "Qdrant not reachable, retrying"
+                    );
+                    sleep(Duration::from_secs(wait_secs)).await;
+                }
+                // Also retry on transient API-level errors (rate-limit / overload).
+                Err(VectorStoreError::Api { status, .. })
+                    if attempts < max_attempts && matches!(status, 429 | 503) =>
+                {
+                    let wait_secs = 2u64.pow(attempts - 1);
+                    warn!(
+                        attempt = attempts,
+                        wait_secs,
+                        status,
+                        "Qdrant returned transient error, retrying"
                     );
                     sleep(Duration::from_secs(wait_secs)).await;
                 }
@@ -130,7 +151,7 @@ impl QdrantStore {
                 let body = json!({
                     "vectors": {
                         "size": self.dimensions,
-                        "distance": "Cosine"
+                        "distance": self.distance
                     }
                 });
 
@@ -245,6 +266,12 @@ impl QdrantStore {
         limit: u32,
         score_threshold: Option<f32>,
     ) -> Result<Vec<SearchResult>, VectorStoreError> {
+        // `with_payload: true` fetches all payload fields from Qdrant.
+        // Qdrant supports server-side filtering via `{"include":[…]}` or
+        // `{"exclude":[…]}`, but we intentionally request the full payload
+        // because (a) `text` is part of SearchResult and must be returned to
+        // callers, and (b) metadata keys are arbitrary and unknown at query
+        // time, so we cannot enumerate them for an include filter.
         let mut body = json!({
             "vector": vector,
             "limit": limit,
@@ -349,6 +376,7 @@ mod tests {
             collection: "test_col".to_string(),
             api_key: None,
             dimensions: 3,
+            distance: "Cosine".to_string(),
         })
     }
 

@@ -53,10 +53,19 @@ pub struct QdrantConfig {
     /// Defaults to 768 when not specified.
     #[serde(default = "default_dimensions")]
     pub dimensions: u32,
+    /// Distance metric used when creating the collection.
+    /// Valid values: `"Cosine"` (default), `"Euclid"`, `"Dot"`.
+    /// Must be chosen to match the embedding model's geometry.
+    #[serde(default = "default_distance")]
+    pub distance: String,
 }
 
 fn default_dimensions() -> u32 {
     768
+}
+
+fn default_distance() -> String {
+    "Cosine".to_string()
 }
 
 impl Default for QdrantConfig {
@@ -66,6 +75,7 @@ impl Default for QdrantConfig {
             collection: "agent_memory".to_string(),
             api_key: None,
             dimensions: default_dimensions(),
+            distance: default_distance(),
         }
     }
 }
