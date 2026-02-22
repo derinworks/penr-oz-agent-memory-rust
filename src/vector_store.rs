@@ -184,7 +184,16 @@ impl QdrantStore {
         let point_id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
 
         let mut payload = metadata;
-        payload.insert("text".to_string(), Value::String(text));
+        match payload.entry("text".to_string()) {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                return Err(VectorStoreError::BadRequest(
+                    "'text' is a reserved metadata key".to_string(),
+                ));
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Value::String(text));
+            }
+        }
 
         let body = json!({
             "points": [
@@ -466,6 +475,18 @@ mod tests {
             .expect("upsert should succeed");
 
         assert_eq!(returned_id, custom_id);
+    }
+
+    #[tokio::test]
+    async fn upsert_rejects_reserved_text_key_in_metadata() {
+        let mut metadata = HashMap::new();
+        metadata.insert("text".to_string(), serde_json::Value::String("oops".to_string()));
+
+        let result = make_store("http://unused")
+            .upsert(None, vec![0.1, 0.2, 0.3], "hello".to_string(), metadata)
+            .await;
+
+        assert!(matches!(result, Err(VectorStoreError::BadRequest(_))));
     }
 
     #[tokio::test]

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    embedding::ProviderRegistry,
+    embedding::{DynEmbeddingProvider, ProviderRegistry},
     error::{EmbeddingError, VectorStoreError},
     vector_store::{QdrantStore, SearchResult},
 };
@@ -20,6 +20,25 @@ pub struct AppState {
     pub registry: ProviderRegistry,
     /// Qdrant vector store – present only when `[qdrant]` is configured.
     pub vector_store: Option<Arc<QdrantStore>>,
+}
+
+impl AppState {
+    /// Return the active vector store and the resolved embedding provider.
+    ///
+    /// `provider_override` comes from the per-request `?provider=` query
+    /// parameter; when absent the registry default is used.
+    fn resolve_store_and_provider<'a>(
+        &'a self,
+        provider_override: Option<&'a str>,
+    ) -> Result<(&'a Arc<QdrantStore>, &'a str, &'a DynEmbeddingProvider), VectorStoreError> {
+        let store = self
+            .vector_store
+            .as_ref()
+            .ok_or(VectorStoreError::NotConfigured)?;
+        let provider_key = provider_override.unwrap_or(self.registry.default_provider());
+        let provider = self.registry.get(Some(provider_key))?;
+        Ok((store, provider_key, provider))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -163,16 +182,8 @@ pub async fn store_memory(
         ));
     }
 
-    let store = state
-        .vector_store
-        .as_ref()
-        .ok_or(VectorStoreError::NotConfigured)?;
-
-    let provider_key = query
-        .provider
-        .as_deref()
-        .unwrap_or(state.registry.default_provider());
-    let provider = state.registry.get(Some(provider_key))?;
+    let (store, provider_key, provider) =
+        state.resolve_store_and_provider(query.provider.as_deref())?;
 
     let embedding = provider.embed(&body.text).await?;
     let dimensions = embedding.len();
@@ -229,16 +240,8 @@ pub async fn search_memory(
         ));
     }
 
-    let store = state
-        .vector_store
-        .as_ref()
-        .ok_or(VectorStoreError::NotConfigured)?;
-
-    let provider_key = query
-        .provider
-        .as_deref()
-        .unwrap_or(state.registry.default_provider());
-    let provider = state.registry.get(Some(provider_key))?;
+    let (store, provider_key, provider) =
+        state.resolve_store_and_provider(query.provider.as_deref())?;
 
     let embedding = provider.embed(&body.text).await?;
     let limit = body.limit.unwrap_or(5);
