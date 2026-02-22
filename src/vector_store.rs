@@ -203,8 +203,7 @@ impl QdrantStore {
         match payload.entry("text".to_string()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 return Err(VectorStoreError::BadRequest(
-                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding. \
-                     Please use a different key for your custom metadata.".to_string(),
+                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding. Please use a different key for your custom metadata.".to_string(),
                 ));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {

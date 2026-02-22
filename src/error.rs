@@ -88,7 +88,7 @@ impl IntoResponse for VectorStoreError {
                     VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
                         StatusCode::INTERNAL_SERVER_ERROR
                     }
-                    VectorStoreError::Embedding(_) => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 (status, Json(json!({ "error": other.to_string() }))).into_response()

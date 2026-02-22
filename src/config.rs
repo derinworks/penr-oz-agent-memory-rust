@@ -105,10 +105,10 @@ impl Config {
         } else if std::env::var("QDRANT_COLLECTION").is_ok()
             || std::env::var("QDRANT_API_KEY").is_ok()
         {
-            warn!(
-                "QDRANT_COLLECTION / QDRANT_API_KEY are set but Qdrant is not configured \
-                 (no [qdrant] section and QDRANT_URL is unset); these variables will have no effect"
-            );
+            warn!(concat!(
+                "Qdrant environment variables (COLLECTION/API_KEY) are set but Qdrant is not configured. ",
+                "These variables will have no effect without a [qdrant] section or QDRANT_URL."
+            ));
         }
 
         Ok(config)

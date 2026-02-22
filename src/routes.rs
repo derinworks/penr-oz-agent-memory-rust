@@ -142,6 +142,20 @@ pub async fn embed(
 }
 
 // ---------------------------------------------------------------------------
+// Shared validation helpers
+// ---------------------------------------------------------------------------
+
+fn require_non_empty_text(text: &str) -> Result<(), VectorStoreError> {
+    if text.is_empty() {
+        Err(VectorStoreError::BadRequest(
+            "Field 'text' must not be empty".to_string(),
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/memory  – store an embedding in Qdrant
 // ---------------------------------------------------------------------------
 
@@ -176,11 +190,7 @@ pub async fn store_memory(
     Query(query): Query<EmbedQuery>,
     Json(body): Json<StoreMemoryRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
-    if body.text.is_empty() {
-        return Err(VectorStoreError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
-        ));
-    }
+    require_non_empty_text(&body.text)?;
 
     let (store, provider_key, provider) =
         state.resolve_store_and_provider(query.provider.as_deref())?;
@@ -234,11 +244,7 @@ pub async fn search_memory(
     Query(query): Query<EmbedQuery>,
     Json(body): Json<SearchMemoryRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
-    if body.text.is_empty() {
-        return Err(VectorStoreError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
-        ));
-    }
+    require_non_empty_text(&body.text)?;
 
     let (store, provider_key, provider) =
         state.resolve_store_and_provider(query.provider.as_deref())?;
