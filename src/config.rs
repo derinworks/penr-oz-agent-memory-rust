@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs};
 
 use serde::Deserialize;
+use tracing::warn;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
@@ -101,6 +102,13 @@ impl Config {
             if let Ok(api_key) = std::env::var("QDRANT_API_KEY") {
                 qdrant.api_key = Some(api_key);
             }
+        } else if std::env::var("QDRANT_COLLECTION").is_ok()
+            || std::env::var("QDRANT_API_KEY").is_ok()
+        {
+            warn!(
+                "QDRANT_COLLECTION / QDRANT_API_KEY are set but Qdrant is not configured \
+                 (no [qdrant] section and QDRANT_URL is unset); these variables will have no effect"
+            );
         }
 
         Ok(config)

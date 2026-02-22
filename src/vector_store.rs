@@ -203,7 +203,8 @@ impl QdrantStore {
         match payload.entry("text".to_string()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 return Err(VectorStoreError::BadRequest(
-                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding".to_string(),
+                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding. \
+                     Please use a different key for your custom metadata.".to_string(),
                 ));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -331,7 +332,10 @@ impl From<QdrantHit> for SearchResult {
         let id = match hit.id {
             Value::String(s) => s,
             Value::Number(n) => n.to_string(),
-            other => other.to_string(),
+            other => {
+                warn!("Unexpected Qdrant ID format: {:?}. Converting to string.", other);
+                other.to_string()
+            }
         };
         // `remove` extracts "text" in a single lookup and transfers ownership,
         // leaving the rest of the payload as metadata without a second pass.
