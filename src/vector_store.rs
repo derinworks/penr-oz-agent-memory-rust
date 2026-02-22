@@ -215,7 +215,7 @@ impl QdrantStore {
         let body = json!({
             "points": [
                 {
-                    "id": point_id,
+                    "id": &point_id,
                     "vector": vector,
                     "payload": payload
                 }
