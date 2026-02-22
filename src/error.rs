@@ -76,25 +76,23 @@ pub enum VectorStoreError {
 
 impl IntoResponse for VectorStoreError {
     fn into_response(self) -> Response {
-        // Delegate to the embedded EmbeddingError's own IntoResponse impl.
-        if let VectorStoreError::Embedding(e) = self {
-            return e.into_response();
+        match self {
+            VectorStoreError::Embedding(e) => e.into_response(),
+            other => {
+                let status = match &other {
+                    VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                    VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
+                    VectorStoreError::Api { status, .. } => {
+                        StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+                    }
+                    VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                    VectorStoreError::Embedding(_) => unreachable!(),
+                };
+
+                (status, Json(json!({ "error": other.to_string() }))).into_response()
+            }
         }
-
-        let status = match &self {
-            VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
-            VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            VectorStoreError::Api { status, .. } => {
-                StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
-            }
-            VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
-            // Embedding variant is handled by the early-return above and is
-            // unreachable here, but listed explicitly to keep the match exhaustive.
-            VectorStoreError::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-
-        (status, Json(json!({ "error": self.to_string() }))).into_response()
     }
 }
