@@ -52,3 +52,48 @@ impl IntoResponse for EmbeddingError {
         (status, Json(json!({ "error": message }))).into_response()
     }
 }
+
+#[derive(Debug, Error)]
+pub enum VectorStoreError {
+    #[error("HTTP request failed: {0}")]
+    Http(#[from] reqwest::Error),
+
+    #[error("Qdrant API error: {status} - {message}")]
+    Api { status: u16, message: String },
+
+    #[error("Invalid response from Qdrant: {0}")]
+    InvalidResponse(String),
+
+    #[error("Vector store not configured")]
+    NotConfigured,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+
+    #[error("Embedding error: {0}")]
+    Embedding(#[from] EmbeddingError),
+}
+
+impl IntoResponse for VectorStoreError {
+    fn into_response(self) -> Response {
+        match self {
+            VectorStoreError::Embedding(e) => e.into_response(),
+            other => {
+                let status = match &other {
+                    VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
+                    VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
+                    VectorStoreError::Api { status, .. } => {
+                        StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
+                    }
+                    VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
+                    // The outer match handles Embedding; this arm is a defensive fallback.
+                    VectorStoreError::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
+                };
+
+                (status, Json(json!({ "error": other.to_string() }))).into_response()
+            }
+        }
+    }
+}

@@ -32,3 +32,27 @@ model = "voyage-3"
 # model = "text-embedding-3-small"
 # auth_scheme = "api-key"
 # embeddings_path = "/openai/deployments/<deployment>/embeddings?api-version=2024-02-01"
+
+# Uncomment the [qdrant] section to enable vector memory storage.
+# Without it the /api/memory and /api/search endpoints return 503,
+# but the embedding API continues to work normally.
+#
+# [qdrant]
+# URL of the Qdrant instance (Docker REST default: http://localhost:6333)
+# Port 6333 is the HTTP REST API; 6334 is the gRPC port.
+# Override with QDRANT_URL environment variable.
+# url = "http://localhost:6333"
+# Collection to store agent memories in.
+# Override with QDRANT_COLLECTION environment variable.
+# collection = "agent_memory"
+# Dimensionality must match the embedding model output.
+# nomic-embed-text (ollama default) → 768
+# text-embedding-3-small (openai)  → 1536
+# voyage-3 (claude/anthropic)      → 1024
+# dimensions = 768
+# Distance metric used when creating the collection.
+# Valid values: "Cosine" (default), "Euclid", "Dot".
+# Choose to match your embedding model's geometry.
+# distance = "Cosine"
+# api_key = ""   # Uncomment for Qdrant Cloud or auth-enabled instances.
+#                # Override with QDRANT_API_KEY environment variable.
