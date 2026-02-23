@@ -93,9 +93,10 @@ impl QdrantStore {
 
     /// Ensure the configured collection exists, creating it if necessary.
     ///
-    /// Retries up to 4 times with exponential backoff (1 s, 2 s, 4 s, 8 s)
-    /// on transient failures: network errors, HTTP 429 (rate-limited), and
-    /// HTTP 503 (service temporarily unavailable).
+    /// Makes up to 5 total attempts (1 initial + up to 4 retries) with
+    /// exponential backoff (1 s, 2 s, 4 s, 8 s) on transient failures:
+    /// network errors, HTTP 429 (rate-limited), and HTTP 503 (service
+    /// temporarily unavailable).
     pub async fn ensure_collection(&self) -> Result<(), VectorStoreError> {
         let mut attempts = 0u32;
         let max_attempts = 5;
@@ -202,7 +203,7 @@ impl QdrantStore {
         match payload.entry("text".to_string()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 return Err(VectorStoreError::BadRequest(
-                    "'text' is a reserved metadata key; it is used internally to store the original text of the embedding. Please use a different key for your custom metadata.".to_string(),
+                    "'text' is a reserved metadata key. Please use a different key for custom metadata.".to_string(),
                 ));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {

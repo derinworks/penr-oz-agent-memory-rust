@@ -88,8 +88,8 @@ impl IntoResponse for VectorStoreError {
                     VectorStoreError::Http(_) | VectorStoreError::InvalidResponse(_) => {
                         StatusCode::INTERNAL_SERVER_ERROR
                     }
-                    // The `other` pattern in the outer match ensures this variant is unreachable.
-                    VectorStoreError::Embedding(_) => unreachable!(),
+                    // The outer match handles Embedding; this arm is a defensive fallback.
+                    VectorStoreError::Embedding(_) => StatusCode::INTERNAL_SERVER_ERROR,
                 };
 
                 (status, Json(json!({ "error": other.to_string() }))).into_response()
