@@ -92,8 +92,10 @@ impl Config {
         // TOML or because QDRANT_URL was set above), so they can never
         // accidentally activate Qdrant on their own.
         if let Ok(url) = std::env::var("QDRANT_URL") {
-            let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
-            qdrant.url = url;
+            if !url.is_empty() {
+                let qdrant = config.qdrant.get_or_insert_with(QdrantConfig::default);
+                qdrant.url = url;
+            }
         }
         if let Some(qdrant) = config.qdrant.as_mut() {
             if let Ok(collection) = std::env::var("QDRANT_COLLECTION") {

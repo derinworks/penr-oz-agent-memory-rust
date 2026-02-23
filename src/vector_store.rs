@@ -25,6 +25,14 @@ use uuid::Uuid;
 use crate::{config::QdrantConfig, error::VectorStoreError};
 
 // ---------------------------------------------------------------------------
+// Public constants
+// ---------------------------------------------------------------------------
+
+/// Error message returned when a caller uses the reserved `"text"` metadata key.
+pub const RESERVED_TEXT_KEY_ERROR: &str =
+    "'text' is a reserved metadata key. Please use a different key for custom metadata.";
+
+// ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
 
@@ -213,7 +221,7 @@ impl QdrantStore {
         match payload.entry("text".to_string()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 return Err(VectorStoreError::BadRequest(
-                    "'text' is a reserved metadata key. Please use a different key for custom metadata.".to_string(),
+                    RESERVED_TEXT_KEY_ERROR.to_string(),
                 ));
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
@@ -295,8 +303,8 @@ impl QdrantStore {
         let results = parsed
             .result
             .into_iter()
-            .map(SearchResult::from)
-            .collect();
+            .map(SearchResult::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(results)
     }
@@ -336,14 +344,18 @@ struct QdrantHit {
     payload: HashMap<String, Value>,
 }
 
-impl From<QdrantHit> for SearchResult {
-    fn from(mut hit: QdrantHit) -> Self {
+impl TryFrom<QdrantHit> for SearchResult {
+    type Error = VectorStoreError;
+
+    fn try_from(mut hit: QdrantHit) -> Result<Self, Self::Error> {
         let id = match hit.id {
             Value::String(s) => s,
             Value::Number(n) => n.to_string(),
             other => {
-                warn!("Unexpected Qdrant ID format: {:?}. Converting to string.", other);
-                other.to_string()
+                return Err(VectorStoreError::InvalidResponse(format!(
+                    "Unexpected Qdrant point ID type: {}",
+                    other
+                )));
             }
         };
         // `remove` extracts "text" in a single lookup and transfers ownership,
@@ -356,12 +368,12 @@ impl From<QdrantHit> for SearchResult {
                 _ => None,
             })
             .unwrap_or_default();
-        SearchResult {
+        Ok(SearchResult {
             id,
             score: hit.score,
             text,
             metadata: hit.payload,
-        }
+        })
     }
 }
 

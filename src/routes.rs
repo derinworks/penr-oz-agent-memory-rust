@@ -13,7 +13,7 @@ use uuid::Uuid;
 use crate::{
     embedding::{DynEmbeddingProvider, ProviderRegistry},
     error::{EmbeddingError, VectorStoreError},
-    vector_store::{QdrantStore, SearchResult},
+    vector_store::{QdrantStore, SearchResult, RESERVED_TEXT_KEY_ERROR},
 };
 
 /// Shared application state passed to every handler.
@@ -194,8 +194,7 @@ pub async fn store_memory(
     require_non_empty_text(&body.text)?;
     if body.metadata.contains_key("text") {
         return Err(VectorStoreError::BadRequest(
-            "'text' is a reserved metadata key. Please use a different key for custom metadata."
-                .to_string(),
+            RESERVED_TEXT_KEY_ERROR.to_string(),
         ));
     }
 
