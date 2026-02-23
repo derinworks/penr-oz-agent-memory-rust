@@ -162,16 +162,26 @@ impl QdrantStore {
                     .await
                     .map_err(VectorStoreError::Http)?;
 
-                if !create_resp.status().is_success() {
-                    return Err(api_error(create_resp).await);
+                match create_resp.status().as_u16() {
+                    200..=299 => {
+                        info!(
+                            collection = %self.collection,
+                            dimensions = self.dimensions,
+                            "Created Qdrant collection"
+                        );
+                        Ok(())
+                    }
+                    // 400/409 means another instance already created the
+                    // collection between our GET and PUT (race condition).
+                    400 | 409 => {
+                        info!(
+                            collection = %self.collection,
+                            "Qdrant collection already exists (concurrent creation)"
+                        );
+                        Ok(())
+                    }
+                    _ => Err(api_error(create_resp).await),
                 }
-
-                info!(
-                    collection = %self.collection,
-                    dimensions = self.dimensions,
-                    "Created Qdrant collection"
-                );
-                Ok(())
             }
             _ => Err(api_error(resp).await),
         }
@@ -183,21 +193,21 @@ impl QdrantStore {
 
     /// Upsert a single point into the collection.
     ///
-    /// - `id`: optional caller-supplied UUID string; a new UUID v4 is generated
+    /// - `id`: optional caller-supplied UUID; a new UUID v4 is generated
     ///   when absent.
     /// - `vector`: the embedding vector.
     /// - `text`: the original text; stored in the payload under `"text"`.
     /// - `metadata`: arbitrary additional payload fields.
     ///
-    /// Returns the point ID that was stored.
+    /// Returns the point ID that was stored (as a string).
     pub async fn upsert(
         &self,
-        id: Option<String>,
+        id: Option<Uuid>,
         vector: Vec<f32>,
         text: String,
         metadata: HashMap<String, Value>,
     ) -> Result<String, VectorStoreError> {
-        let point_id = id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let point_id = id.unwrap_or_else(Uuid::new_v4).to_string();
 
         let mut payload = metadata;
         match payload.entry("text".to_string()) {
@@ -490,7 +500,7 @@ mod tests {
     #[tokio::test]
     async fn upsert_uses_supplied_id() {
         let server = MockServer::start().await;
-        let custom_id = "00000000-0000-0000-0000-000000000001".to_string();
+        let custom_uuid = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
 
         Mock::given(method("PUT"))
             .and(path("/collections/test_col/points"))
@@ -505,7 +515,7 @@ mod tests {
         let store = make_store(&server.uri());
         let returned_id = store
             .upsert(
-                Some(custom_id.clone()),
+                Some(custom_uuid),
                 vec![0.1, 0.2, 0.3],
                 "hello".to_string(),
                 HashMap::new(),
@@ -513,7 +523,7 @@ mod tests {
             .await
             .expect("upsert should succeed");
 
-        assert_eq!(returned_id, custom_id);
+        assert_eq!(returned_id, custom_uuid.to_string());
     }
 
     #[tokio::test]

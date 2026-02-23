@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use uuid::Uuid;
 
 use crate::{
     embedding::{DynEmbeddingProvider, ProviderRegistry},
@@ -164,8 +165,8 @@ pub struct StoreMemoryRequest {
     /// The text to embed and store.
     pub text: String,
     /// Optional caller-supplied UUID for the point. A new UUID v4 is generated
-    /// when absent.
-    pub id: Option<String>,
+    /// when absent. Serde validates the format on deserialization.
+    pub id: Option<Uuid>,
     /// Arbitrary metadata stored alongside the embedding in Qdrant.
     #[serde(default)]
     pub metadata: HashMap<String, Value>,
@@ -191,6 +192,12 @@ pub async fn store_memory(
     Json(body): Json<StoreMemoryRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
     require_non_empty_text(&body.text)?;
+    if body.metadata.contains_key("text") {
+        return Err(VectorStoreError::BadRequest(
+            "'text' is a reserved metadata key. Please use a different key for custom metadata."
+                .to_string(),
+        ));
+    }
 
     let (store, provider_key, provider) =
         state.resolve_store_and_provider(query.provider.as_deref())?;
