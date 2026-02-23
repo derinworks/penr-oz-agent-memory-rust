@@ -104,30 +104,29 @@ impl QdrantStore {
             attempts += 1;
             match self.try_ensure_collection().await {
                 Ok(()) => return Ok(()),
-                Err(VectorStoreError::Http(e)) if attempts < max_attempts => {
-                    let wait_secs = 2u64.pow(attempts - 1); // 1, 2, 4, 8 …
-                    warn!(
-                        attempt = attempts,
-                        wait_secs,
-                        error = %e,
-                        "Qdrant not reachable, retrying"
+                Err(e) => {
+                    let is_transient = matches!(
+                        &e,
+                        VectorStoreError::Http(_)
+                            | VectorStoreError::Api {
+                                status: 429 | 503,
+                                ..
+                            }
                     );
-                    sleep(Duration::from_secs(wait_secs)).await;
+
+                    if is_transient && attempts < max_attempts {
+                        let wait_secs = 2u64.pow(attempts - 1); // 1, 2, 4, 8 …
+                        warn!(
+                            attempt = attempts,
+                            wait_secs,
+                            error = %e,
+                            "Qdrant not reachable or experiencing transient error, retrying"
+                        );
+                        sleep(Duration::from_secs(wait_secs)).await;
+                    } else {
+                        return Err(e);
+                    }
                 }
-                // Also retry on transient API-level errors (rate-limit / overload).
-                Err(VectorStoreError::Api { status, .. })
-                    if attempts < max_attempts && matches!(status, 429 | 503) =>
-                {
-                    let wait_secs = 2u64.pow(attempts - 1);
-                    warn!(
-                        attempt = attempts,
-                        wait_secs,
-                        status,
-                        "Qdrant returned transient error, retrying"
-                    );
-                    sleep(Duration::from_secs(wait_secs)).await;
-                }
-                Err(e) => return Err(e),
             }
         }
     }
