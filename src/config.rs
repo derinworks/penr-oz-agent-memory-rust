@@ -99,7 +99,9 @@ impl Config {
         }
         if let Some(qdrant) = config.qdrant.as_mut() {
             if let Ok(collection) = std::env::var("QDRANT_COLLECTION") {
-                qdrant.collection = collection;
+                if !collection.is_empty() {
+                    qdrant.collection = collection;
+                }
             }
             if let Ok(api_key) = std::env::var("QDRANT_API_KEY") {
                 qdrant.api_key = Some(api_key);

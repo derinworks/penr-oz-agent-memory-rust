@@ -143,6 +143,12 @@ pub async fn embed(
 }
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const DEFAULT_SEARCH_LIMIT: u32 = 5;
+
+// ---------------------------------------------------------------------------
 // Shared validation helpers
 // ---------------------------------------------------------------------------
 
@@ -256,7 +262,7 @@ pub async fn search_memory(
         state.resolve_store_and_provider(query.provider.as_deref())?;
 
     let embedding = provider.embed(&body.text).await?;
-    let limit = body.limit.unwrap_or(5);
+    let limit = body.limit.unwrap_or(DEFAULT_SEARCH_LIMIT);
 
     let results = store.search(embedding, limit, body.score_threshold).await?;
 

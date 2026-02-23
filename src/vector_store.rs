@@ -218,16 +218,12 @@ impl QdrantStore {
         let point_id = id.unwrap_or_else(Uuid::new_v4).to_string();
 
         let mut payload = metadata;
-        match payload.entry("text".to_string()) {
-            std::collections::hash_map::Entry::Occupied(_) => {
-                return Err(VectorStoreError::BadRequest(
-                    RESERVED_TEXT_KEY_ERROR.to_string(),
-                ));
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(Value::String(text));
-            }
+        if payload.contains_key("text") {
+            return Err(VectorStoreError::BadRequest(
+                RESERVED_TEXT_KEY_ERROR.to_string(),
+            ));
         }
+        payload.insert("text".to_string(), Value::String(text));
 
         let body = json!({
             "points": [
@@ -360,14 +356,13 @@ impl TryFrom<QdrantHit> for SearchResult {
         };
         // `remove` extracts "text" in a single lookup and transfers ownership,
         // leaving the rest of the payload as metadata without a second pass.
-        let text = hit
-            .payload
-            .remove("text")
-            .and_then(|v| match v {
-                Value::String(s) => Some(s),
-                _ => None,
-            })
-            .unwrap_or_default();
+        let text = match hit.payload.remove("text") {
+            Some(Value::String(s)) => Ok(s),
+            _ => Err(VectorStoreError::InvalidResponse(format!(
+                "Qdrant hit with id '{}' is missing 'text' field or it's not a string",
+                id
+            ))),
+        }?;
         Ok(SearchResult {
             id,
             score: hit.score,
