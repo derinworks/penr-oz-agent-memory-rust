@@ -79,12 +79,14 @@ impl MemoryStore {
                 Some(s) => e.session.as_deref() == Some(s),
                 None => true,
             })
-            .map(|e| SearchResult {
-                id: e.id.clone(),
-                text: e.text.clone(),
-                metadata: e.metadata.clone(),
-                session: e.session.clone(),
-                score: cosine_similarity(query_embedding, &e.embedding),
+            .filter_map(|e| {
+                cosine_similarity(query_embedding, &e.embedding).map(|score| SearchResult {
+                    id: e.id.clone(),
+                    text: e.text.clone(),
+                    metadata: e.metadata.clone(),
+                    session: e.session.clone(),
+                    score,
+                })
             })
             .collect();
 
@@ -101,15 +103,18 @@ impl MemoryStore {
 
 /// Compute the cosine similarity between two vectors.
 ///
-/// Returns 0.0 if either vector has zero magnitude.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+/// Returns `None` when either vector has zero magnitude, since cosine
+/// similarity is mathematically undefined for the zero vector.  Callers
+/// should treat `None` as "not comparable" and exclude such entries from
+/// ranked results rather than silently assigning a score of 0.
+fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f32> {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
     if mag_a == 0.0 || mag_b == 0.0 {
-        return 0.0;
+        return None;
     }
-    dot / (mag_a * mag_b)
+    Some(dot / (mag_a * mag_b))
 }
 
 #[cfg(test)]
@@ -147,18 +152,18 @@ mod tests {
         assert_eq!(results[1].text, "hello again");
         // "goodbye world" should be last (orthogonal)
         assert_eq!(results[2].text, "goodbye world");
-        assert!((results[2].score - 0.0).abs() < 1e-6);
+        assert!(results[2].score.abs() < 1e-6);
     }
 
     #[test]
     fn search_respects_limit() {
         let store = MemoryStore::new();
-        for i in 0..5 {
+        for i in 1..=5 {
             store.store(
                 format!("entry {i}"),
                 HashMap::new(),
                 None,
-                vec![i as f32, 0.0],
+                vec![i as f32, 1.0],
             );
         }
 
@@ -214,7 +219,7 @@ mod tests {
     fn cosine_similarity_of_identical_vectors_is_one() {
         let a = vec![1.0, 2.0, 3.0];
         let score = cosine_similarity(&a, &a);
-        assert!((score - 1.0).abs() < 1e-6);
+        assert!((score.unwrap() - 1.0).abs() < 1e-6);
     }
 
     #[test]
@@ -222,15 +227,36 @@ mod tests {
         let a = vec![1.0, 0.0];
         let b = vec![0.0, 1.0];
         let score = cosine_similarity(&a, &b);
-        assert!((score - 0.0).abs() < 1e-6);
+        assert!(score.unwrap().abs() < 1e-6);
     }
 
     #[test]
-    fn cosine_similarity_with_zero_vector_is_zero() {
+    fn cosine_similarity_with_zero_vector_is_none() {
         let a = vec![1.0, 2.0];
         let b = vec![0.0, 0.0];
-        let score = cosine_similarity(&a, &b);
-        assert!((score - 0.0).abs() < 1e-6);
+        assert!(cosine_similarity(&a, &b).is_none());
+        assert!(cosine_similarity(&b, &a).is_none());
+    }
+
+    #[test]
+    fn search_excludes_zero_magnitude_entries() {
+        let store = MemoryStore::new();
+        store.store(
+            "valid".to_string(),
+            HashMap::new(),
+            None,
+            vec![1.0, 0.0],
+        );
+        store.store(
+            "zero vector".to_string(),
+            HashMap::new(),
+            None,
+            vec![0.0, 0.0],
+        );
+
+        let results = store.search(&vec![1.0, 0.0], 10, None);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].text, "valid");
     }
 
     #[test]
