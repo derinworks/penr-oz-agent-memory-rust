@@ -5,6 +5,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
+use tracing::warn;
 
 #[derive(Debug, Error)]
 pub enum EmbeddingError {
@@ -41,7 +42,10 @@ impl IntoResponse for EmbeddingError {
             EmbeddingError::AuthenticationError => {
                 (StatusCode::UNAUTHORIZED, self.to_string())
             }
-            EmbeddingError::MemoryNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            EmbeddingError::MemoryNotFound(id) => {
+                warn!(memory_id = %id, "Memory entry not found");
+                (StatusCode::NOT_FOUND, self.to_string())
+            }
             EmbeddingError::ProviderError { status, .. } => {
                 let http_status =
                     StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);

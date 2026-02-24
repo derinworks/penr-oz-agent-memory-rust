@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
@@ -124,7 +125,7 @@ pub async fn embed(
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if body.text.is_empty() {
         return Err(EmbeddingError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
+            EMPTY_TEXT_ERROR.to_string(),
         ));
     }
 
@@ -149,6 +150,7 @@ pub async fn embed(
 // ---------------------------------------------------------------------------
 
 const DEFAULT_SEARCH_LIMIT: u32 = 5;
+const EMPTY_TEXT_ERROR: &str = "Field 'text' must not be empty";
 
 // ---------------------------------------------------------------------------
 // Shared validation helpers
@@ -157,7 +159,7 @@ const DEFAULT_SEARCH_LIMIT: u32 = 5;
 fn require_non_empty_text(text: &str) -> Result<(), VectorStoreError> {
     if text.is_empty() {
         Err(VectorStoreError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
+            EMPTY_TEXT_ERROR.to_string(),
         ))
     } else {
         Ok(())
@@ -314,7 +316,7 @@ pub async fn store_memory(
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if body.text.is_empty() {
         return Err(EmbeddingError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
+            EMPTY_TEXT_ERROR.to_string(),
         ));
     }
 
@@ -395,8 +397,10 @@ pub async fn delete_memory(
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if state.memory.delete(&id) {
+        info!(memory_id = %id, "Memory entry deleted");
         Ok(StatusCode::NO_CONTENT)
     } else {
+        warn!(memory_id = %id, "Attempted to delete non-existent memory entry");
         Err(EmbeddingError::MemoryNotFound(id))
     }
 }
