@@ -28,6 +28,9 @@ pub enum EmbeddingError {
 
     #[error("Bad request: {0}")]
     BadRequest(String),
+
+    #[error("Memory entry '{0}' not found")]
+    MemoryNotFound(String),
 }
 
 impl IntoResponse for EmbeddingError {
@@ -38,6 +41,7 @@ impl IntoResponse for EmbeddingError {
             EmbeddingError::AuthenticationError => {
                 (StatusCode::UNAUTHORIZED, self.to_string())
             }
+            EmbeddingError::MemoryNotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             EmbeddingError::ProviderError { status, .. } => {
                 let http_status =
                     StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
