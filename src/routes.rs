@@ -1,19 +1,21 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{
     embedding::{DynEmbeddingProvider, ProviderRegistry},
     error::{EmbeddingError, VectorStoreError},
-    vector_store::{QdrantStore, SearchResult, RESERVED_TEXT_KEY_ERROR},
+    memory::{MemoryStore, SearchResult as MemorySearchResult},
+    vector_store::{QdrantStore, SearchResult as QdrantSearchResult, RESERVED_TEXT_KEY_ERROR},
 };
 
 /// Shared application state passed to every handler.
@@ -21,6 +23,7 @@ pub struct AppState {
     pub registry: ProviderRegistry,
     /// Qdrant vector store – present only when `[qdrant]` is configured.
     pub vector_store: Option<Arc<QdrantStore>>,
+    pub memory: MemoryStore,
 }
 
 impl AppState {
@@ -122,7 +125,7 @@ pub async fn embed(
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if body.text.is_empty() {
         return Err(EmbeddingError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
+            EMPTY_TEXT_ERROR.to_string(),
         ));
     }
 
@@ -147,6 +150,8 @@ pub async fn embed(
 // ---------------------------------------------------------------------------
 
 const DEFAULT_SEARCH_LIMIT: u32 = 5;
+const EMPTY_TEXT_ERROR: &str = "Field 'text' must not be empty";
+const EMPTY_SEARCH_QUERY_ERROR: &str = "Query parameter 'q' must not be empty";
 
 // ---------------------------------------------------------------------------
 // Shared validation helpers
@@ -155,7 +160,7 @@ const DEFAULT_SEARCH_LIMIT: u32 = 5;
 fn require_non_empty_text(text: &str) -> Result<(), VectorStoreError> {
     if text.is_empty() {
         Err(VectorStoreError::BadRequest(
-            "Field 'text' must not be empty".to_string(),
+            EMPTY_TEXT_ERROR.to_string(),
         ))
     } else {
         Ok(())
@@ -167,7 +172,7 @@ fn require_non_empty_text(text: &str) -> Result<(), VectorStoreError> {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-pub struct StoreMemoryRequest {
+pub struct StoreMemoryQdrantRequest {
     /// The text to embed and store.
     pub text: String,
     /// Optional caller-supplied UUID for the point. A new UUID v4 is generated
@@ -179,7 +184,7 @@ pub struct StoreMemoryRequest {
 }
 
 #[derive(Serialize)]
-pub struct StoreMemoryResponse {
+pub struct StoreMemoryQdrantResponse {
     /// The ID of the stored point (UUID string).
     pub id: String,
     /// Dimensionality of the stored vector.
@@ -192,10 +197,10 @@ pub struct StoreMemoryResponse {
 ///
 /// Use the optional `?provider=<name>` query parameter to choose which
 /// embedding provider generates the vector.
-pub async fn store_memory(
+pub async fn store_memory_qdrant(
     State(state): State<Arc<AppState>>,
     Query(query): Query<EmbedQuery>,
-    Json(body): Json<StoreMemoryRequest>,
+    Json(body): Json<StoreMemoryQdrantRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
     require_non_empty_text(&body.text)?;
     if body.metadata.contains_key("text") {
@@ -216,7 +221,7 @@ pub async fn store_memory(
 
     Ok((
         StatusCode::OK,
-        Json(StoreMemoryResponse {
+        Json(StoreMemoryQdrantResponse {
             id,
             dimensions,
             provider: provider_key.to_string(),
@@ -229,7 +234,7 @@ pub async fn store_memory(
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-pub struct SearchMemoryRequest {
+pub struct SearchMemoryQdrantRequest {
     /// The query text to embed for the similarity search.
     pub text: String,
     /// Maximum number of results to return (default: 5).
@@ -239,9 +244,9 @@ pub struct SearchMemoryRequest {
 }
 
 #[derive(Serialize)]
-pub struct SearchMemoryResponse {
+pub struct SearchMemoryQdrantResponse {
     /// Ordered list of nearest-neighbour results (most similar first).
-    pub results: Vec<SearchResult>,
+    pub results: Vec<QdrantSearchResult>,
     /// The embedding provider that was used for the query vector.
     pub provider: String,
 }
@@ -251,10 +256,10 @@ pub struct SearchMemoryResponse {
 /// Use the optional `?provider=<name>` query parameter to choose which
 /// embedding provider generates the query vector (should match the provider
 /// used during storage for best results).
-pub async fn search_memory(
+pub async fn search_memory_qdrant(
     State(state): State<Arc<AppState>>,
     Query(query): Query<EmbedQuery>,
-    Json(body): Json<SearchMemoryRequest>,
+    Json(body): Json<SearchMemoryQdrantRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
     require_non_empty_text(&body.text)?;
 
@@ -268,9 +273,135 @@ pub async fn search_memory(
 
     Ok((
         StatusCode::OK,
-        Json(SearchMemoryResponse {
+        Json(SearchMemoryQdrantResponse {
             results,
             provider: provider_key.to_string(),
         }),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// POST /memory  – store a memory in the in-memory vector store
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct StoreMemoryQuery {
+    /// Optionally override the configured default provider.
+    pub provider: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct StoreMemoryRequest {
+    /// The text content to memorise.
+    pub text: String,
+    /// Arbitrary key-value metadata attached to the memory.
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
+    /// Optional session tag for grouping related memories.
+    pub session: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct StoreMemoryResponse {
+    pub id: String,
+}
+
+/// Store a new memory entry.
+///
+/// The text is embedded via the selected provider and stored alongside the
+/// supplied metadata.  Returns the generated memory ID.
+pub async fn store_memory(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<StoreMemoryQuery>,
+    Json(body): Json<StoreMemoryRequest>,
+) -> Result<impl IntoResponse, EmbeddingError> {
+    if body.text.is_empty() {
+        return Err(EmbeddingError::BadRequest(
+            EMPTY_TEXT_ERROR.to_string(),
+        ));
+    }
+
+    let provider_key = query
+        .provider
+        .as_deref()
+        .unwrap_or(state.registry.default_provider());
+    let provider = state.registry.get(Some(provider_key))?;
+
+    let embedding = provider.embed(&body.text).await?;
+
+    let id = state
+        .memory
+        .store(body.text, body.metadata, body.session, embedding);
+
+    Ok((StatusCode::CREATED, Json(StoreMemoryResponse { id })))
+}
+
+// ---------------------------------------------------------------------------
+// GET /memory/search
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct SearchMemoryQuery {
+    /// The search query text.
+    pub q: String,
+    /// Maximum number of results to return (default: 10).
+    pub limit: Option<usize>,
+    /// Filter results to a specific session tag.
+    pub session: Option<String>,
+    /// Optionally override the configured default provider.
+    pub provider: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SearchMemoryResponse {
+    pub results: Vec<MemorySearchResult>,
+}
+
+/// Semantic search over stored memories.
+///
+/// The query text is embedded and compared against all stored memory vectors
+/// using cosine similarity.  Results are returned in descending order of
+/// relevance.
+pub async fn search_memory(
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<SearchMemoryQuery>,
+) -> Result<impl IntoResponse, EmbeddingError> {
+    if query.q.is_empty() {
+        return Err(EmbeddingError::BadRequest(
+            EMPTY_SEARCH_QUERY_ERROR.to_string(),
+        ));
+    }
+
+    let provider_key = query
+        .provider
+        .as_deref()
+        .unwrap_or(state.registry.default_provider());
+    let provider = state.registry.get(Some(provider_key))?;
+
+    let query_embedding = provider.embed(&query.q).await?;
+
+    let limit = query.limit.unwrap_or(10);
+    let results = state
+        .memory
+        .search(&query_embedding, limit, query.session.as_deref());
+
+    Ok((StatusCode::OK, Json(SearchMemoryResponse { results })))
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /memory/:id
+// ---------------------------------------------------------------------------
+
+/// Delete a stored memory entry by its ID.
+pub async fn delete_memory(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, EmbeddingError> {
+    if state.memory.delete(&id) {
+        info!(memory_id = %id, "Memory entry deleted");
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        warn!(memory_id = %id, "Attempted to delete non-existent memory entry");
+        Err(EmbeddingError::MemoryNotFound(id))
+    }
 }

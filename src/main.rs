@@ -1,19 +1,21 @@
 mod config;
 mod embedding;
 mod error;
+mod memory;
 mod routes;
 mod vector_store;
 
 use std::{net::{IpAddr, SocketAddr}, sync::Arc};
 
-use axum::{routing::{get, post}, Router};
+use axum::{routing::{delete, get, post}, Router};
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use crate::{
     config::Config,
     embedding::ProviderRegistry,
-    routes::{embed, health, search_memory, store_memory, AppState},
+    memory::MemoryStore,
+    routes::{delete_memory, embed, health, search_memory, store_memory, AppState},
     vector_store::QdrantStore,
 };
 
@@ -61,13 +63,17 @@ async fn main() {
     let state = Arc::new(AppState {
         registry,
         vector_store,
+        memory: MemoryStore::new(),
     });
 
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/embed", post(embed))
-        .route("/api/memory", post(store_memory))
-        .route("/api/search", post(search_memory))
+        .route("/api/memory", post(routes::store_memory_qdrant))
+        .route("/api/search", post(routes::search_memory_qdrant))
+        .route("/memory", post(store_memory))
+        .route("/memory/search", get(search_memory))
+        .route("/memory/{id}", delete(delete_memory))
         .with_state(state);
 
     let host: IpAddr = config.server.host.parse().expect("Invalid server host address");
