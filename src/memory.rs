@@ -103,11 +103,14 @@ impl MemoryStore {
 
 /// Compute the cosine similarity between two vectors.
 ///
-/// Returns `None` when either vector has zero magnitude, since cosine
-/// similarity is mathematically undefined for the zero vector.  Callers
-/// should treat `None` as "not comparable" and exclude such entries from
-/// ranked results rather than silently assigning a score of 0.
+/// Returns `None` when the vectors have different dimensions (incompatible
+/// embeddings from different providers) or when either vector has zero
+/// magnitude.  Callers should treat `None` as "not comparable" and exclude
+/// such entries from ranked results.
 fn cosine_similarity(a: &[f32], b: &[f32]) -> Option<f32> {
+    if a.len() != b.len() {
+        return None;
+    }
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let mag_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let mag_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -236,6 +239,36 @@ mod tests {
         let b = vec![0.0, 0.0];
         assert!(cosine_similarity(&a, &b).is_none());
         assert!(cosine_similarity(&b, &a).is_none());
+    }
+
+    #[test]
+    fn cosine_similarity_with_mismatched_dimensions_is_none() {
+        let a = vec![1.0, 0.0, 0.0]; // 3-dim (e.g. provider A)
+        let b = vec![1.0, 0.0];       // 2-dim (e.g. provider B)
+        assert!(cosine_similarity(&a, &b).is_none());
+        assert!(cosine_similarity(&b, &a).is_none());
+    }
+
+    #[test]
+    fn search_excludes_dimension_mismatched_entries() {
+        let store = MemoryStore::new();
+        store.store(
+            "3-dim entry".to_string(),
+            HashMap::new(),
+            None,
+            vec![1.0, 0.0, 0.0],
+        );
+        store.store(
+            "2-dim entry".to_string(),
+            HashMap::new(),
+            None,
+            vec![1.0, 0.0],
+        );
+
+        // Query with 3-dim vector: only the 3-dim entry should match
+        let results = store.search(&vec![1.0, 0.0, 0.0], 10, None);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].text, "3-dim entry");
     }
 
     #[test]
