@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
 use std::sync::RwLock;
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,31 @@ pub struct SearchResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
     pub score: f32,
+}
+
+/// Wrapper for min-heap ordering: the *lowest* score is popped first so the
+/// heap always retains the top-k highest-scoring results.
+struct MinScored(SearchResult);
+
+impl PartialEq for MinScored {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.score == other.0.score
+    }
+}
+
+impl Eq for MinScored {}
+
+impl PartialOrd for MinScored {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MinScored {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse: lowest score = greatest in heap order → popped first.
+        other.0.score.partial_cmp(&self.0.score).unwrap_or(Ordering::Equal)
+    }
 }
 
 /// Thread-safe in-memory vector store for agent memory.
@@ -64,7 +90,11 @@ impl MemoryStore {
 
     /// Search for the top-k most similar entries to the given query embedding.
     ///
-    /// Results are ranked by cosine similarity in descending order.
+    /// Uses a min-heap for O(N log k) selection instead of a full O(N log N)
+    /// sort, which is significantly faster when `limit` is much smaller than
+    /// the total number of stored entries.
+    ///
+    /// Results are returned in descending order of cosine similarity.
     /// An optional `session` filter limits results to a specific session tag.
     pub fn search(
         &self,
@@ -73,26 +103,36 @@ impl MemoryStore {
         session: Option<&str>,
     ) -> Vec<SearchResult> {
         let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
-        let mut scored: Vec<SearchResult> = entries
-            .values()
-            .filter(|e| match session {
-                Some(s) => e.session.as_deref() == Some(s),
-                None => true,
-            })
-            .filter_map(|e| {
-                cosine_similarity(query_embedding, &e.embedding).map(|score| SearchResult {
+
+        // Min-heap keeps at most `limit` entries; the lowest score is on top
+        // so it can be cheaply evicted when a better candidate arrives.
+        let mut heap = BinaryHeap::<MinScored>::with_capacity(limit + 1);
+
+        for e in entries.values() {
+            if let Some(s) = session {
+                if e.session.as_deref() != Some(s) {
+                    continue;
+                }
+            }
+            if let Some(score) = cosine_similarity(query_embedding, &e.embedding) {
+                let result = SearchResult {
                     id: e.id.clone(),
                     text: e.text.clone(),
                     metadata: e.metadata.clone(),
                     session: e.session.clone(),
                     score,
-                })
-            })
-            .collect();
+                };
+                heap.push(MinScored(result));
+                if heap.len() > limit {
+                    heap.pop(); // evict the lowest-scoring entry
+                }
+            }
+        }
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(limit);
-        scored
+        // Drain into a vec and reverse so highest score comes first.
+        let mut results: Vec<SearchResult> = heap.into_iter().map(|ms| ms.0).collect();
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+        results
     }
 
     /// Delete a memory entry by ID. Returns `true` if the entry existed.

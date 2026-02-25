@@ -151,6 +151,7 @@ pub async fn embed(
 
 const DEFAULT_SEARCH_LIMIT: u32 = 5;
 const EMPTY_TEXT_ERROR: &str = "Field 'text' must not be empty";
+const EMPTY_SEARCH_QUERY_ERROR: &str = "Query parameter 'q' must not be empty";
 
 // ---------------------------------------------------------------------------
 // Shared validation helpers
@@ -367,7 +368,7 @@ pub async fn search_memory(
 ) -> Result<impl IntoResponse, EmbeddingError> {
     if query.q.is_empty() {
         return Err(EmbeddingError::BadRequest(
-            "Query parameter 'q' must not be empty".to_string(),
+            EMPTY_SEARCH_QUERY_ERROR.to_string(),
         ));
     }
 
