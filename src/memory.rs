@@ -58,7 +58,7 @@ impl MemoryStore {
             session,
             embedding,
         };
-        self.entries.write().unwrap().insert(id.clone(), entry);
+        self.entries.write().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), entry);
         id
     }
 
@@ -72,7 +72,7 @@ impl MemoryStore {
         limit: usize,
         session: Option<&str>,
     ) -> Vec<SearchResult> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         let mut scored: Vec<SearchResult> = entries
             .values()
             .filter(|e| match session {
@@ -97,7 +97,7 @@ impl MemoryStore {
 
     /// Delete a memory entry by ID. Returns `true` if the entry existed.
     pub fn delete(&self, id: &str) -> bool {
-        self.entries.write().unwrap().remove(id).is_some()
+        self.entries.write().unwrap_or_else(|e| e.into_inner()).remove(id).is_some()
     }
 }
 
