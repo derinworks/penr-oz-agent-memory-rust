@@ -26,6 +26,15 @@ pub enum SessionError {
 
     #[error("Bad request: {0}")]
     BadRequest(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+}
+
+impl From<sqlx::Error> for SessionError {
+    fn from(e: sqlx::Error) -> Self {
+        SessionError::Database(e.to_string())
+    }
 }
 
 impl IntoResponse for SessionError {
@@ -34,6 +43,7 @@ impl IntoResponse for SessionError {
             SessionError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             SessionError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             SessionError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            SessionError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
         (status, Json(json!({ "error": message }))).into_response()

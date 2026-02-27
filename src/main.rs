@@ -79,11 +79,21 @@ async fn main() {
         None
     };
 
+    let session_api_key = std::env::var("SESSION_API_KEY")
+        .ok()
+        .filter(|k| !k.is_empty());
+    if session_api_key.is_some() {
+        info!("Session API key configured – /api/sessions endpoints require X-Api-Key header");
+    } else {
+        info!("SESSION_API_KEY not set – /api/sessions endpoints are unauthenticated");
+    }
+
     let state = Arc::new(AppState {
         registry,
         vector_store,
         memory: MemoryStore::new(),
         session_store,
+        session_api_key,
     });
 
     let app = Router::new()

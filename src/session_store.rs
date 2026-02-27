@@ -57,9 +57,7 @@ impl SessionStore {
             .map_err(|e| SessionError::Database(e.to_string()))?
             .create_if_missing(true);
 
-        let pool = SqlitePool::connect_with(options)
-            .await
-            .map_err(|e| SessionError::Database(e.to_string()))?;
+        let pool = SqlitePool::connect_with(options).await?;
 
         sqlx::migrate!("./migrations")
             .run(&pool)
@@ -91,8 +89,7 @@ impl SessionStore {
         .bind(&now)
         .bind(&tags_json)
         .execute(&self.pool)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+        .await?;
 
         Ok(Session {
             id,
@@ -113,20 +110,24 @@ impl SessionStore {
         )
         .bind(id)
         .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+        .await?;
 
         row.map(|r| parse_session_row(&r)).transpose()
     }
 
-    /// Return all sessions ordered by `created_at` descending (newest first).
-    pub async fn list(&self) -> Result<Vec<Session>, SessionError> {
+    /// Return a page of sessions ordered by `created_at` descending (newest first).
+    ///
+    /// Use `limit` to cap the number of results and `offset` to skip entries
+    /// for cursor-style pagination. Pass `limit = 0` to use no upper bound.
+    pub async fn list(&self, limit: u64, offset: u64) -> Result<Vec<Session>, SessionError> {
         let rows = sqlx::query(
-            "SELECT id, created_at, updated_at, tags FROM sessions ORDER BY created_at DESC",
+            "SELECT id, created_at, updated_at, tags \
+             FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?",
         )
+        .bind(limit as i64)
+        .bind(offset as i64)
         .fetch_all(&self.pool)
-        .await
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+        .await?;
 
         rows.iter().map(parse_session_row).collect()
     }
@@ -137,18 +138,10 @@ impl SessionStore {
 // ---------------------------------------------------------------------------
 
 fn parse_session_row(row: &sqlx::sqlite::SqliteRow) -> Result<Session, SessionError> {
-    let id: String = row
-        .try_get("id")
-        .map_err(|e| SessionError::Database(e.to_string()))?;
-    let created_at: String = row
-        .try_get("created_at")
-        .map_err(|e| SessionError::Database(e.to_string()))?;
-    let updated_at: String = row
-        .try_get("updated_at")
-        .map_err(|e| SessionError::Database(e.to_string()))?;
-    let tags_json: String = row
-        .try_get("tags")
-        .map_err(|e| SessionError::Database(e.to_string()))?;
+    let id: String = row.try_get("id")?;
+    let created_at: String = row.try_get("created_at")?;
+    let updated_at: String = row.try_get("updated_at")?;
+    let tags_json: String = row.try_get("tags")?;
     let tags: Vec<String> = serde_json::from_str(&tags_json)
         .map_err(|e| SessionError::Serialization(e.to_string()))?;
 
@@ -231,7 +224,7 @@ mod tests {
         let s1 = store.create(vec![]).await.expect("create s1");
         let s2 = store.create(vec![]).await.expect("create s2");
 
-        let sessions = store.list().await.expect("list should succeed");
+        let sessions = store.list(50, 0).await.expect("list should succeed");
         assert_eq!(sessions.len(), 2);
 
         // Newest first – s2 was created after s1
@@ -245,7 +238,31 @@ mod tests {
     #[tokio::test]
     async fn list_returns_empty_when_no_sessions() {
         let store = make_store().await;
-        let sessions = store.list().await.expect("list should succeed");
+        let sessions = store.list(50, 0).await.expect("list should succeed");
         assert!(sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_respects_limit() {
+        let store = make_store().await;
+        store.create(vec![]).await.expect("create s1");
+        store.create(vec![]).await.expect("create s2");
+        store.create(vec![]).await.expect("create s3");
+
+        let sessions = store.list(2, 0).await.expect("list with limit should succeed");
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn list_respects_offset() {
+        let store = make_store().await;
+        store.create(vec![]).await.expect("create s1");
+        store.create(vec![]).await.expect("create s2");
+        store.create(vec![]).await.expect("create s3");
+
+        let all = store.list(50, 0).await.expect("list all");
+        let page2 = store.list(50, 2).await.expect("list with offset");
+        assert_eq!(page2.len(), 1);
+        assert_eq!(page2[0].id, all[2].id);
     }
 }

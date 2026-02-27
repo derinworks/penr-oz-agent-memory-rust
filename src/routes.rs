@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     Json,
 };
@@ -28,6 +28,9 @@ pub struct AppState {
     pub memory: MemoryStore,
     /// SQLite session store – present only when `[database]` is configured.
     pub session_store: Option<Arc<SessionStore>>,
+    /// Optional API key required in the `X-Api-Key` header for session endpoints.
+    /// When `None` the endpoints are unauthenticated (suitable for private deployments).
+    pub session_api_key: Option<String>,
 }
 
 impl AppState {
@@ -243,7 +246,7 @@ pub async fn store_memory_qdrant(
                 store
                     .get(sid)
                     .await
-                    .map_err(|e| VectorStoreError::BadRequest(e.to_string()))?
+                    .map_err(|e| VectorStoreError::InvalidResponse(format!("Session store error: {e}")))?
                     .ok_or_else(|| {
                         VectorStoreError::BadRequest(format!(
                             "Session '{sid}' not found"
@@ -462,6 +465,30 @@ pub async fn delete_memory(
 }
 
 // ---------------------------------------------------------------------------
+// Session auth helper
+// ---------------------------------------------------------------------------
+
+/// Validate the `X-Api-Key` header when a session API key is configured.
+///
+/// Returns `Ok(())` if auth passes or if no key is configured (open access).
+fn validate_session_auth(headers: &HeaderMap, state: &AppState) -> Result<(), SessionError> {
+    if let Some(ref expected) = state.session_api_key {
+        let provided = headers
+            .get("x-api-key")
+            .and_then(|v| v.to_str().ok());
+        match provided {
+            Some(key) if key == expected => Ok(()),
+            Some(_) => Err(SessionError::Unauthorized("Invalid API key".to_string())),
+            None => Err(SessionError::Unauthorized(
+                "Missing X-Api-Key header".to_string(),
+            )),
+        }
+    } else {
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // POST /api/sessions  – create a new session
 // ---------------------------------------------------------------------------
 
@@ -475,8 +502,11 @@ pub struct CreateSessionRequest {
 /// Create a new session with optional tags.
 pub async fn create_session(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, SessionError> {
+    validate_session_auth(&headers, &state)?;
+
     let store = state
         .session_store
         .as_ref()
@@ -491,16 +521,30 @@ pub async fn create_session(
 // GET /api/sessions  – list all sessions
 // ---------------------------------------------------------------------------
 
-/// Return all sessions ordered by creation time (newest first).
+#[derive(Deserialize)]
+pub struct ListSessionsQuery {
+    /// Maximum number of sessions to return (default: 50).
+    pub limit: Option<u64>,
+    /// Number of sessions to skip for pagination (default: 0).
+    pub offset: Option<u64>,
+}
+
+/// Return sessions ordered by creation time (newest first), with pagination.
 pub async fn list_sessions(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, SessionError> {
+    validate_session_auth(&headers, &state)?;
+
     let store = state
         .session_store
         .as_ref()
         .ok_or(SessionError::NotConfigured)?;
 
-    let sessions: Vec<Session> = store.list().await?;
+    let sessions: Vec<Session> = store
+        .list(query.limit.unwrap_or(50), query.offset.unwrap_or(0))
+        .await?;
 
     Ok((StatusCode::OK, Json(sessions)))
 }
@@ -512,8 +556,11 @@ pub async fn list_sessions(
 /// Return the session with the given ID, or 404 if it does not exist.
 pub async fn get_session(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, SessionError> {
+    validate_session_auth(&headers, &state)?;
+
     let store = state
         .session_store
         .as_ref()
