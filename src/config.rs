@@ -8,6 +8,14 @@ pub struct Config {
     pub server: ServerConfig,
     pub embedding: EmbeddingConfig,
     pub qdrant: Option<QdrantConfig>,
+    pub database: Option<DatabaseConfig>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct DatabaseConfig {
+    /// SQLite connection URL, e.g. `sqlite:./agent_memory.db`.
+    /// Can be overridden by the `DATABASE_URL` environment variable.
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -113,6 +121,17 @@ impl Config {
                 env_vars = "QDRANT_COLLECTION, QDRANT_API_KEY",
                 "Qdrant env vars set but Qdrant is not configured; they will have no effect"
             );
+        }
+
+        // DATABASE_URL enables the session store when no [database] section is
+        // present, or overrides the url when one is already configured.
+        if let Ok(url) = std::env::var("DATABASE_URL") {
+            if !url.is_empty() {
+                let db = config
+                    .database
+                    .get_or_insert_with(|| DatabaseConfig { url: url.clone() });
+                db.url = url;
+            }
         }
 
         Ok(config)

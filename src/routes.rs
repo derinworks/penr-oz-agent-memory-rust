@@ -13,9 +13,10 @@ use uuid::Uuid;
 
 use crate::{
     embedding::{DynEmbeddingProvider, ProviderRegistry},
-    error::{EmbeddingError, VectorStoreError},
+    error::{EmbeddingError, SessionError, VectorStoreError},
     memory::{MemoryStore, SearchResult as MemorySearchResult},
-    vector_store::{QdrantStore, SearchResult as QdrantSearchResult, RESERVED_TEXT_KEY_ERROR},
+    session_store::{Session, SessionStore},
+    vector_store::{QdrantStore, SearchResult as QdrantSearchResult, RESERVED_SESSION_ID_KEY_ERROR, RESERVED_TEXT_KEY_ERROR},
 };
 
 /// Shared application state passed to every handler.
@@ -23,7 +24,10 @@ pub struct AppState {
     pub registry: ProviderRegistry,
     /// Qdrant vector store – present only when `[qdrant]` is configured.
     pub vector_store: Option<Arc<QdrantStore>>,
+    /// In-memory vector store for fast lookups without Qdrant.
     pub memory: MemoryStore,
+    /// SQLite session store – present only when `[database]` is configured.
+    pub session_store: Option<Arc<SessionStore>>,
 }
 
 impl AppState {
@@ -55,6 +59,7 @@ pub struct HealthResponse {
     pub providers: Vec<String>,
     pub default_provider: String,
     pub vector_store: &'static str,
+    pub session_store: &'static str,
 }
 
 /// Liveness probe – always returns 200 with available provider information.
@@ -73,6 +78,12 @@ pub async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         "not configured"
     };
 
+    let session_store = if state.session_store.is_some() {
+        "configured"
+    } else {
+        "not configured"
+    };
+
     (
         StatusCode::OK,
         Json(HealthResponse {
@@ -80,6 +91,7 @@ pub async fn health(State(state): State<Arc<AppState>>) -> impl IntoResponse {
             providers: names,
             default_provider: state.registry.default_provider().to_string(),
             vector_store,
+            session_store,
         }),
     )
 }
@@ -178,7 +190,11 @@ pub struct StoreMemoryQdrantRequest {
     /// Optional caller-supplied UUID for the point. A new UUID v4 is generated
     /// when absent. Serde validates the format on deserialization.
     pub id: Option<Uuid>,
+    /// Optional session ID to associate this memory entry with a session.
+    /// When provided and a session store is configured, the session must exist.
+    pub session_id: Option<String>,
     /// Arbitrary metadata stored alongside the embedding in Qdrant.
+    /// The keys `"text"` and `"session_id"` are reserved and must not be used.
     #[serde(default)]
     pub metadata: HashMap<String, Value>,
 }
@@ -191,12 +207,17 @@ pub struct StoreMemoryQdrantResponse {
     pub dimensions: usize,
     /// The embedding provider that was used.
     pub provider: String,
+    /// The session ID associated with this memory entry, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 /// Embed `text` and store it in the Qdrant vector store.
 ///
 /// Use the optional `?provider=<name>` query parameter to choose which
 /// embedding provider generates the vector.
+///
+/// Optionally supply a `session_id` to link this entry to an existing session.
 pub async fn store_memory_qdrant(
     State(state): State<Arc<AppState>>,
     Query(query): Query<EmbedQuery>,
@@ -208,6 +229,34 @@ pub async fn store_memory_qdrant(
             RESERVED_TEXT_KEY_ERROR.to_string(),
         ));
     }
+    if body.metadata.contains_key("session_id") {
+        return Err(VectorStoreError::BadRequest(
+            RESERVED_SESSION_ID_KEY_ERROR.to_string(),
+        ));
+    }
+
+    // Validate that the referenced session exists when a session store is
+    // configured and the caller supplied a session_id.
+    if let Some(ref sid) = body.session_id {
+        match &state.session_store {
+            Some(store) => {
+                store
+                    .get(sid)
+                    .await
+                    .map_err(|e| VectorStoreError::BadRequest(e.to_string()))?
+                    .ok_or_else(|| {
+                        VectorStoreError::BadRequest(format!(
+                            "Session '{sid}' not found"
+                        ))
+                    })?;
+            }
+            None => {
+                return Err(VectorStoreError::BadRequest(
+                    "Cannot associate a session_id: session store is not configured".to_string(),
+                ));
+            }
+        }
+    }
 
     let (store, provider_key, provider) =
         state.resolve_store_and_provider(query.provider.as_deref())?;
@@ -215,8 +264,13 @@ pub async fn store_memory_qdrant(
     let embedding = provider.embed(&body.text).await?;
     let dimensions = embedding.len();
 
+    let mut metadata = body.metadata;
+    if let Some(ref sid) = body.session_id {
+        metadata.insert("session_id".to_string(), Value::String(sid.clone()));
+    }
+
     let id = store
-        .upsert(body.id, embedding, body.text, body.metadata)
+        .upsert(body.id, embedding, body.text, metadata)
         .await?;
 
     Ok((
@@ -225,6 +279,7 @@ pub async fn store_memory_qdrant(
             id,
             dimensions,
             provider: provider_key.to_string(),
+            session_id: body.session_id,
         }),
     ))
 }
@@ -404,4 +459,70 @@ pub async fn delete_memory(
         warn!(memory_id = %id, "Attempted to delete non-existent memory entry");
         Err(EmbeddingError::MemoryNotFound(id))
     }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/sessions  – create a new session
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct CreateSessionRequest {
+    /// Optional tags to associate with the session.
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+/// Create a new session with optional tags.
+pub async fn create_session(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CreateSessionRequest>,
+) -> Result<impl IntoResponse, SessionError> {
+    let store = state
+        .session_store
+        .as_ref()
+        .ok_or(SessionError::NotConfigured)?;
+
+    let session = store.create(body.tags).await?;
+
+    Ok((StatusCode::CREATED, Json(session)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/sessions  – list all sessions
+// ---------------------------------------------------------------------------
+
+/// Return all sessions ordered by creation time (newest first).
+pub async fn list_sessions(
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, SessionError> {
+    let store = state
+        .session_store
+        .as_ref()
+        .ok_or(SessionError::NotConfigured)?;
+
+    let sessions: Vec<Session> = store.list().await?;
+
+    Ok((StatusCode::OK, Json(sessions)))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/sessions/:id  – look up a session by ID
+// ---------------------------------------------------------------------------
+
+/// Return the session with the given ID, or 404 if it does not exist.
+pub async fn get_session(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Result<impl IntoResponse, SessionError> {
+    let store = state
+        .session_store
+        .as_ref()
+        .ok_or(SessionError::NotConfigured)?;
+
+    let session = store
+        .get(&id)
+        .await?
+        .ok_or_else(|| SessionError::NotFound(id))?;
+
+    Ok((StatusCode::OK, Json(session)))
 }

@@ -8,6 +8,39 @@ use thiserror::Error;
 use tracing::warn;
 
 #[derive(Debug, Error)]
+pub enum SessionError {
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("Session not found: {0}")]
+    NotFound(String),
+
+    #[error("Session store not configured")]
+    NotConfigured,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+}
+
+impl IntoResponse for SessionError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            SessionError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            SessionError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
+            SessionError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+        };
+        (status, Json(json!({ "error": message }))).into_response()
+    }
+}
+
+#[derive(Debug, Error)]
 pub enum EmbeddingError {
     #[error("HTTP request failed: {0}")]
     HttpError(#[from] reqwest::Error),

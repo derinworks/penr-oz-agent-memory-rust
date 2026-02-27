@@ -32,6 +32,10 @@ use crate::{config::QdrantConfig, error::VectorStoreError};
 pub const RESERVED_TEXT_KEY_ERROR: &str =
     "'text' is a reserved metadata key. Please use a different key for custom metadata.";
 
+/// Error message returned when a caller uses the reserved `"session_id"` metadata key.
+pub const RESERVED_SESSION_ID_KEY_ERROR: &str =
+    "'session_id' is a reserved metadata key. Supply it via the top-level 'session_id' field instead.";
+
 // ---------------------------------------------------------------------------
 // Public types
 // ---------------------------------------------------------------------------
