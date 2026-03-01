@@ -277,6 +277,11 @@ pub async fn store_memory_qdrant(
         .upsert(body.id, embedding, body.text, metadata)
         .await?;
 
+    // Best-effort: bump updated_at on the session so it reflects last activity.
+    if let (Some(ref sid), Some(ref session_store)) = (&body.session_id, &state.session_store) {
+        let _ = session_store.touch(sid).await;
+    }
+
     Ok((
         StatusCode::OK,
         Json(StoreMemoryQdrantResponse {
@@ -530,7 +535,7 @@ pub async fn create_session(
 
 #[derive(Deserialize)]
 pub struct ListSessionsQuery {
-    /// Maximum number of sessions to return (default: 50).
+    /// Maximum number of sessions to return (default: 50, min: 1, max: 100).
     pub limit: Option<u64>,
     /// Number of sessions to skip for pagination (default: 0).
     pub offset: Option<u64>,

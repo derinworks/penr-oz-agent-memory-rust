@@ -106,6 +106,22 @@ impl SessionStore {
         })
     }
 
+    /// Update `updated_at` for the session with the given `id`.
+    ///
+    /// Returns `true` if the session was found and updated, `false` otherwise.
+    /// Call this whenever a memory entry is linked to the session so that
+    /// `updated_at` tracks the last activity time.
+    pub async fn touch(&self, id: &str) -> Result<bool, SessionError> {
+        let now = Utc::now().to_rfc3339();
+        let rows = sqlx::query("UPDATE sessions SET updated_at = ? WHERE id = ?")
+            .bind(&now)
+            .bind(id)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+        Ok(rows > 0)
+    }
+
     // -----------------------------------------------------------------------
     // Read
     // -----------------------------------------------------------------------
@@ -277,5 +293,38 @@ mod tests {
         let page2 = store.list(50, 2).await.expect("list with offset");
         assert_eq!(page2.len(), 1);
         assert_eq!(page2[0].id, all[2].id);
+    }
+
+    #[tokio::test]
+    async fn touch_updates_updated_at() {
+        let store = make_store().await;
+        let s = store.create(vec![]).await.expect("create session");
+        let original_updated_at = s.updated_at.clone();
+
+        // Brief pause to ensure the new timestamp differs.
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+
+        let found = store.touch(&s.id).await.expect("touch should succeed");
+        assert!(found, "touch should return true for an existing session");
+
+        let refreshed = store
+            .get(&s.id)
+            .await
+            .expect("get should succeed")
+            .expect("session should exist");
+        assert!(
+            refreshed.updated_at > original_updated_at,
+            "updated_at should advance after touch"
+        );
+    }
+
+    #[tokio::test]
+    async fn touch_returns_false_for_missing_session() {
+        let store = make_store().await;
+        let found = store
+            .touch("no-such-id")
+            .await
+            .expect("touch should not error");
+        assert!(!found, "touch should return false for a non-existent session");
     }
 }
