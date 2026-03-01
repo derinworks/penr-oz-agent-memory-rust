@@ -121,6 +121,9 @@ pub enum VectorStoreError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
     #[error("Embedding error: {0}")]
     Embedding(#[from] EmbeddingError),
 }
@@ -133,6 +136,7 @@ impl IntoResponse for VectorStoreError {
                 let status = match &other {
                     VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                     VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
+                    VectorStoreError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
                     VectorStoreError::Api { status, .. } => {
                         StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
                     }

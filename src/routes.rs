@@ -223,6 +223,7 @@ pub struct StoreMemoryQdrantResponse {
 /// Optionally supply a `session_id` to link this entry to an existing session.
 pub async fn store_memory_qdrant(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(query): Query<EmbedQuery>,
     Json(body): Json<StoreMemoryQdrantRequest>,
 ) -> Result<impl IntoResponse, VectorStoreError> {
@@ -236,6 +237,30 @@ pub async fn store_memory_qdrant(
         return Err(VectorStoreError::BadRequest(
             RESERVED_SESSION_ID_KEY_ERROR.to_string(),
         ));
+    }
+
+    // When a session_id is supplied, require the same API key auth used by the
+    // session endpoints to prevent unauthenticated callers from associating
+    // memory entries with arbitrary sessions.
+    if body.session_id.is_some() {
+        if let Some(ref expected) = state.session_api_key {
+            let provided = headers
+                .get("x-api-key")
+                .and_then(|v| v.to_str().ok());
+            match provided {
+                Some(key) if constant_time_eq(key, expected) => {}
+                Some(_) => {
+                    return Err(VectorStoreError::Unauthorized(
+                        "Invalid API key".to_string(),
+                    ))
+                }
+                None => {
+                    return Err(VectorStoreError::Unauthorized(
+                        "Missing X-Api-Key header".to_string(),
+                    ))
+                }
+            }
+        }
     }
 
     // Validate that the referenced session exists when a session store is
@@ -468,6 +493,17 @@ pub async fn delete_memory(
 // Session auth helper
 // ---------------------------------------------------------------------------
 
+/// Constant-time byte-wise equality check to prevent timing attacks on secret
+/// values such as API keys.
+fn constant_time_eq(a: &str, b: &str) -> bool {
+    let a = a.as_bytes();
+    let b = b.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
 /// Validate the `X-Api-Key` header when a session API key is configured.
 ///
 /// Returns `Ok(())` if auth passes or if no key is configured (open access).
@@ -477,7 +513,7 @@ fn validate_session_auth(headers: &HeaderMap, state: &AppState) -> Result<(), Se
             .get("x-api-key")
             .and_then(|v| v.to_str().ok());
         match provided {
-            Some(key) if key == expected => Ok(()),
+            Some(key) if constant_time_eq(key, expected) => Ok(()),
             Some(_) => Err(SessionError::Unauthorized("Invalid API key".to_string())),
             None => Err(SessionError::Unauthorized(
                 "Missing X-Api-Key header".to_string(),

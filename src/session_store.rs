@@ -122,10 +122,10 @@ impl SessionStore {
     pub async fn list(&self, limit: u64, offset: u64) -> Result<Vec<Session>, SessionError> {
         let rows = sqlx::query(
             "SELECT id, created_at, updated_at, tags \
-             FROM sessions ORDER BY created_at DESC LIMIT ? OFFSET ?",
+             FROM sessions ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
         )
-        .bind(limit as i64)
-        .bind(offset as i64)
+        .bind(if limit == 0 { -1i64 } else { limit.min(i64::MAX as u64) as i64 })
+        .bind(offset.min(i64::MAX as u64) as i64)
         .fetch_all(&self.pool)
         .await?;
 

@@ -127,10 +127,11 @@ impl Config {
         // present, or overrides the url when one is already configured.
         if let Ok(url) = std::env::var("DATABASE_URL") {
             if !url.is_empty() {
-                let db = config
-                    .database
-                    .get_or_insert_with(|| DatabaseConfig { url: url.clone() });
-                db.url = url;
+                if let Some(db) = &mut config.database {
+                    db.url = url;
+                } else {
+                    config.database = Some(DatabaseConfig { url });
+                }
             }
         }
 

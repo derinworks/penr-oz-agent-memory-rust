@@ -105,7 +105,7 @@ async fn main() {
         .route("/memory/search", get(search_memory))
         .route("/memory/{id}", delete(delete_memory))
         .route("/api/sessions", get(list_sessions).post(create_session))
-        .route("/api/sessions/:id", get(get_session))
+        .route("/api/sessions/{id}", get(get_session))
         .with_state(state);
 
     let host: IpAddr = config.server.host.parse().expect("Invalid server host address");
