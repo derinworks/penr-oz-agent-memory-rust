@@ -8,7 +8,7 @@
 //! Database schema is managed via the migration files in `./migrations/`.
 
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePool},
+    sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
     Row,
 };
 use std::str::FromStr;
@@ -57,7 +57,14 @@ impl SessionStore {
             .map_err(|e| SessionError::Database(e.to_string()))?
             .create_if_missing(true);
 
-        let pool = SqlitePool::connect_with(options).await?;
+        // sqlite::memory: databases are per-connection; a pool with more than
+        // one connection would give each connection its own isolated database,
+        // causing migrations and data to be invisible across connections.
+        let max_conns = if database_url.contains(":memory:") { 1 } else { 5 };
+        let pool = SqlitePoolOptions::new()
+            .max_connections(max_conns)
+            .connect_with(options)
+            .await?;
 
         sqlx::migrate!("./migrations")
             .run(&pool)

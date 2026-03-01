@@ -541,12 +541,11 @@ pub async fn create_session(
     headers: HeaderMap,
     Json(body): Json<CreateSessionRequest>,
 ) -> Result<impl IntoResponse, SessionError> {
-    validate_session_auth(&headers, &state)?;
-
     let store = state
         .session_store
         .as_ref()
         .ok_or(SessionError::NotConfigured)?;
+    validate_session_auth(&headers, &state)?;
 
     let session = store.create(body.tags).await?;
 
@@ -571,12 +570,11 @@ pub async fn list_sessions(
     headers: HeaderMap,
     Query(query): Query<ListSessionsQuery>,
 ) -> Result<impl IntoResponse, SessionError> {
-    validate_session_auth(&headers, &state)?;
-
     let store = state
         .session_store
         .as_ref()
         .ok_or(SessionError::NotConfigured)?;
+    validate_session_auth(&headers, &state)?;
 
     let sessions: Vec<Session> = store
         .list(query.limit.unwrap_or(50), query.offset.unwrap_or(0))
@@ -595,12 +593,11 @@ pub async fn get_session(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, SessionError> {
-    validate_session_auth(&headers, &state)?;
-
     let store = state
         .session_store
         .as_ref()
         .ok_or(SessionError::NotConfigured)?;
+    validate_session_auth(&headers, &state)?;
 
     let session = store
         .get(&id)
