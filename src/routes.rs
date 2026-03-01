@@ -243,24 +243,8 @@ pub async fn store_memory_qdrant(
     // session endpoints to prevent unauthenticated callers from associating
     // memory entries with arbitrary sessions.
     if body.session_id.is_some() {
-        if let Some(ref expected) = state.session_api_key {
-            let provided = headers
-                .get("x-api-key")
-                .and_then(|v| v.to_str().ok());
-            match provided {
-                Some(key) if constant_time_eq(key, expected) => {}
-                Some(_) => {
-                    return Err(VectorStoreError::Unauthorized(
-                        "Invalid API key".to_string(),
-                    ))
-                }
-                None => {
-                    return Err(VectorStoreError::Unauthorized(
-                        "Missing X-Api-Key header".to_string(),
-                    ))
-                }
-            }
-        }
+        validate_session_auth(&headers, &state)
+            .map_err(|e| VectorStoreError::Unauthorized(e.to_string()))?;
     }
 
     // Validate that the referenced session exists when a session store is
@@ -577,7 +561,7 @@ pub async fn list_sessions(
     validate_session_auth(&headers, &state)?;
 
     let sessions: Vec<Session> = store
-        .list(query.limit.unwrap_or(50), query.offset.unwrap_or(0))
+        .list(query.limit.unwrap_or(50).min(100), query.offset.unwrap_or(0))
         .await?;
 
     Ok((StatusCode::OK, Json(sessions)))

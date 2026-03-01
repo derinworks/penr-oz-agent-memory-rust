@@ -44,7 +44,10 @@ impl IntoResponse for SessionError {
             SessionError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
             SessionError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             SessionError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
-            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            ),
         };
         (status, Json(json!({ "error": message }))).into_response()
     }

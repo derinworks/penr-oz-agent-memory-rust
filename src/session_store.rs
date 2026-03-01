@@ -235,11 +235,8 @@ mod tests {
         assert_eq!(sessions.len(), 2);
 
         // Newest first – s2 was created after s1
-        let ids: Vec<&str> = sessions.iter().map(|s| s.id.as_str()).collect();
-        assert!(
-            ids.contains(&s1.id.as_str()) && ids.contains(&s2.id.as_str()),
-            "both sessions should be listed"
-        );
+        assert_eq!(sessions[0].id, s2.id, "s2 should be the first session (newest)");
+        assert_eq!(sessions[1].id, s1.id, "s1 should be the second session (oldest)");
     }
 
     #[tokio::test]
