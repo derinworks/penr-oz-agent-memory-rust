@@ -480,12 +480,8 @@ pub async fn delete_memory(
 /// Constant-time byte-wise equality check to prevent timing attacks on secret
 /// values such as API keys.
 fn constant_time_eq(a: &str, b: &str) -> bool {
-    let a = a.as_bytes();
-    let b = b.as_bytes();
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b.iter()).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    use subtle::ConstantTimeEq;
+    a.as_bytes().ct_eq(b.as_bytes()).into()
 }
 
 /// Validate the `X-Api-Key` header when a session API key is configured.
@@ -561,7 +557,7 @@ pub async fn list_sessions(
     validate_session_auth(&headers, &state)?;
 
     let sessions: Vec<Session> = store
-        .list(query.limit.unwrap_or(50).min(100), query.offset.unwrap_or(0))
+        .list(query.limit.unwrap_or(50).clamp(1, 100), query.offset.unwrap_or(0))
         .await?;
 
     Ok((StatusCode::OK, Json(sessions)))

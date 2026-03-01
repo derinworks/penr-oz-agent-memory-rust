@@ -1299,6 +1299,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "subtle",
  "thiserror 1.0.69",
  "tokio",
  "tokio-test",

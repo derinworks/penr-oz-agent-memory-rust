@@ -112,14 +112,14 @@ impl SessionStore {
 
     /// Return the session with the given `id`, or `None` if it does not exist.
     pub async fn get(&self, id: &str) -> Result<Option<Session>, SessionError> {
-        let row = sqlx::query(
+        sqlx::query_as::<_, DbSession>(
             "SELECT id, created_at, updated_at, tags FROM sessions WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(&self.pool)
-        .await?;
-
-        row.map(|r| parse_session_row(&r)).transpose()
+        .await?
+        .map(Session::try_from)
+        .transpose()
     }
 
     /// Return a page of sessions ordered by `created_at` descending (newest first).
@@ -127,16 +127,17 @@ impl SessionStore {
     /// Use `limit` to cap the number of results and `offset` to skip entries
     /// for cursor-style pagination. Pass `limit = 0` to use no upper bound.
     pub async fn list(&self, limit: u64, offset: u64) -> Result<Vec<Session>, SessionError> {
-        let rows = sqlx::query(
+        sqlx::query_as::<_, DbSession>(
             "SELECT id, created_at, updated_at, tags \
              FROM sessions ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
         )
         .bind(if limit == 0 { -1i64 } else { limit.min(i64::MAX as u64) as i64 })
         .bind(offset.min(i64::MAX as u64) as i64)
         .fetch_all(&self.pool)
-        .await?;
-
-        rows.iter().map(parse_session_row).collect()
+        .await?
+        .into_iter()
+        .map(Session::try_from)
+        .collect()
     }
 }
 
@@ -144,20 +145,28 @@ impl SessionStore {
 // Private helpers
 // ---------------------------------------------------------------------------
 
-fn parse_session_row(row: &sqlx::sqlite::SqliteRow) -> Result<Session, SessionError> {
-    let id: String = row.try_get("id")?;
-    let created_at: String = row.try_get("created_at")?;
-    let updated_at: String = row.try_get("updated_at")?;
-    let tags_json: String = row.try_get("tags")?;
-    let tags: Vec<String> = serde_json::from_str(&tags_json)
-        .map_err(|e| SessionError::Serialization(e.to_string()))?;
+/// Database row representation of a session; maps directly to the `sessions` table.
+#[derive(sqlx::FromRow)]
+struct DbSession {
+    id: String,
+    created_at: String,
+    updated_at: String,
+    tags: String, // JSON-encoded Vec<String>
+}
 
-    Ok(Session {
-        id,
-        created_at,
-        updated_at,
-        tags,
-    })
+impl TryFrom<DbSession> for Session {
+    type Error = SessionError;
+
+    fn try_from(db: DbSession) -> Result<Self, Self::Error> {
+        let tags: Vec<String> = serde_json::from_str(&db.tags)
+            .map_err(|e| SessionError::Serialization(e.to_string()))?;
+        Ok(Session {
+            id: db.id,
+            created_at: db.created_at,
+            updated_at: db.updated_at,
+            tags,
+        })
+    }
 }
 
 // ---------------------------------------------------------------------------
