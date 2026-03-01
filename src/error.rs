@@ -8,6 +8,52 @@ use thiserror::Error;
 use tracing::warn;
 
 #[derive(Debug, Error)]
+pub enum SessionError {
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Migration error: {0}")]
+    Migration(String),
+
+    #[error("Serialization error: {0}")]
+    Serialization(String),
+
+    #[error("Session not found: {0}")]
+    NotFound(String),
+
+    #[error("Session store not configured")]
+    NotConfigured,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
+
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+}
+
+impl From<sqlx::Error> for SessionError {
+    fn from(e: sqlx::Error) -> Self {
+        SessionError::Database(e.to_string())
+    }
+}
+
+impl IntoResponse for SessionError {
+    fn into_response(self) -> Response {
+        let (status, message) = match &self {
+            SessionError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            SessionError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
+            SessionError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            SessionError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
+            _ => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Internal server error".to_string(),
+            ),
+        };
+        (status, Json(json!({ "error": message }))).into_response()
+    }
+}
+
+#[derive(Debug, Error)]
 pub enum EmbeddingError {
     #[error("HTTP request failed: {0}")]
     HttpError(#[from] reqwest::Error),
@@ -78,6 +124,12 @@ pub enum VectorStoreError {
     #[error("Bad request: {0}")]
     BadRequest(String),
 
+    #[error("Unauthorized: {0}")]
+    Unauthorized(String),
+
+    #[error("Internal dependency error: {0}")]
+    InternalDependencyError(String),
+
     #[error("Embedding error: {0}")]
     Embedding(#[from] EmbeddingError),
 }
@@ -90,6 +142,10 @@ impl IntoResponse for VectorStoreError {
                 let status = match &other {
                     VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                     VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
+                    VectorStoreError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+                    VectorStoreError::InternalDependencyError(_) => {
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
                     VectorStoreError::Api { status, .. } => {
                         StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
                     }
