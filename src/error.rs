@@ -127,6 +127,9 @@ pub enum VectorStoreError {
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 
+    #[error("Internal dependency error: {0}")]
+    InternalDependencyError(String),
+
     #[error("Embedding error: {0}")]
     Embedding(#[from] EmbeddingError),
 }
@@ -140,6 +143,9 @@ impl IntoResponse for VectorStoreError {
                     VectorStoreError::NotConfigured => StatusCode::SERVICE_UNAVAILABLE,
                     VectorStoreError::BadRequest(_) => StatusCode::BAD_REQUEST,
                     VectorStoreError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+                    VectorStoreError::InternalDependencyError(_) => {
+                        StatusCode::INTERNAL_SERVER_ERROR
+                    }
                     VectorStoreError::Api { status, .. } => {
                         StatusCode::from_u16(*status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR)
                     }

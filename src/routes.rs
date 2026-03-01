@@ -250,24 +250,16 @@ pub async fn store_memory_qdrant(
     // Validate that the referenced session exists when a session store is
     // configured and the caller supplied a session_id.
     if let Some(ref sid) = body.session_id {
-        match &state.session_store {
-            Some(store) => {
-                store
-                    .get(sid)
-                    .await
-                    .map_err(|e| VectorStoreError::InvalidResponse(format!("Session store error: {e}")))?
-                    .ok_or_else(|| {
-                        VectorStoreError::BadRequest(format!(
-                            "Session '{sid}' not found"
-                        ))
-                    })?;
-            }
-            None => {
-                return Err(VectorStoreError::BadRequest(
-                    "Cannot associate a session_id: session store is not configured".to_string(),
-                ));
-            }
-        }
+        let store = state.session_store.as_ref().ok_or_else(|| {
+            VectorStoreError::BadRequest(
+                "Cannot associate a session_id: session store is not configured".to_string(),
+            )
+        })?;
+        store
+            .get(sid)
+            .await
+            .map_err(|e| VectorStoreError::InternalDependencyError(format!("Session store error: {e}")))?
+            .ok_or_else(|| VectorStoreError::BadRequest(format!("Session '{sid}' not found")))?;
     }
 
     let (store, provider_key, provider) =
