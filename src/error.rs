@@ -24,9 +24,6 @@ pub enum SessionError {
     #[error("Session store not configured")]
     NotConfigured,
 
-    #[error("Bad request: {0}")]
-    BadRequest(String),
-
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
 }
@@ -42,7 +39,6 @@ impl IntoResponse for SessionError {
         let (status, message) = match &self {
             SessionError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
             SessionError::NotConfigured => (StatusCode::SERVICE_UNAVAILABLE, self.to_string()),
-            SessionError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             SessionError::Unauthorized(_) => (StatusCode::UNAUTHORIZED, self.to_string()),
             _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,

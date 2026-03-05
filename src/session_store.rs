@@ -7,10 +7,7 @@
 //!
 //! Database schema is managed via the migration files in `./migrations/`.
 
-use sqlx::{
-    sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions},
-    Row,
-};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool, SqlitePoolOptions};
 use std::str::FromStr;
 
 use chrono::Utc;
