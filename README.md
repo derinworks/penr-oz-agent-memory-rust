@@ -152,7 +152,7 @@ The server supports multiple embedding providers.  Set the active provider in
 |----------|-----------|--------------------------|------------|
 | Ollama   | `ollama`  | `nomic-embed-text`       | 768        |
 | OpenAI   | `openai`  | `text-embedding-3-small` | 1536       |
-| Anthropic| `claude`  | `voyage-3`               | 1024       |
+| Anthropic (Voyage AI) | `claude`  | `voyage-3`    | 1024       |
 
 ### Qdrant vector store (optional)
 

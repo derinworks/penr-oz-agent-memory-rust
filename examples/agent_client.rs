@@ -23,7 +23,7 @@
 
 use std::collections::HashMap;
 
-use reqwest::Client;
+use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_SERVER_URL: &str = "http://127.0.0.1:8080";
@@ -74,9 +74,10 @@ struct HealthResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let base_url = std::env::args()
+    let base_url: Url = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| DEFAULT_SERVER_URL.to_string());
+        .unwrap_or_else(|| DEFAULT_SERVER_URL.to_string())
+        .parse()?;
 
     println!("Agent Memory Client Demo");
     println!("========================");
@@ -90,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // -----------------------------------------------------------------------
     println!("--- Step 1: Health Check ---");
     let health: HealthResponse = client
-        .get(format!("{base_url}/health"))
+        .get(base_url.join("health")?)
         .send()
         .await?
         .error_for_status()?
@@ -141,7 +142,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         metadata.insert("tag".to_string(), tag.to_string());
 
         let resp: StoreMemoryResponse = client
-            .post(format!("{base_url}/memory"))
+            .post(base_url.join("memory")?)
             .json(&StoreMemoryRequest {
                 text: text.to_string(),
                 metadata,
@@ -175,7 +176,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  query: \"{query}\"");
 
         let resp: SearchMemoryResponse = client
-            .get(format!("{base_url}/memory/search"))
+            .get(base_url.join("memory/search")?)
             .query(&[
                 ("q", query.to_string()),
                 ("session", session.to_string()),
@@ -208,7 +209,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Task: 'Explain the deployment process'");
 
     let context_resp: SearchMemoryResponse = client
-        .get(format!("{base_url}/memory/search"))
+        .get(base_url.join("memory/search")?)
         .query(&[
             ("q", "deployment and infrastructure".to_string()),
             ("session", session.to_string()),
@@ -229,13 +230,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    let agent_response = "Deployment targets AWS us-east-1. \
-        The team ships via trunk-based development with feature flags \
-        to ensure safe, incremental rollouts.";
+    let agent_response = "Deployment targets AWS us-east-1. The team ships via trunk-based development with feature flags to ensure safe, incremental rollouts.";
 
     println!("  Agent stores its synthesised response…");
     let new_mem: StoreMemoryResponse = client
-        .post(format!("{base_url}/memory"))
+        .post(base_url.join("memory")?)
         .json(&StoreMemoryRequest {
             text: agent_response.to_string(),
             metadata: {
@@ -260,7 +259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Step 5: Memory Lifecycle – Deleting a Memory ---");
     let id_to_delete = &stored_ids[0];
     client
-        .delete(format!("{base_url}/memory/{id_to_delete}"))
+        .delete(base_url.join(&format!("memory/{id_to_delete}"))?)
         .send()
         .await?
         .error_for_status()?;
