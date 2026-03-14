@@ -138,8 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut stored_ids: Vec<String> = Vec::new();
 
     for (text, tag) in memories {
-        let mut metadata = HashMap::new();
-        metadata.insert("tag".to_string(), tag.to_string());
+        let metadata = HashMap::from([("tag".to_string(), tag.to_string())]);
 
         let resp: StoreMemoryResponse = client
             .post(base_url.join("memory")?)

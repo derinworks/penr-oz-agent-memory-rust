@@ -155,7 +155,7 @@ The server supports multiple embedding providers.  Set the active provider in
 | Anthropic¹ | `claude`  | `voyage-3`               | 1024       |
 
 > ¹ The `claude` provider calls the **Anthropic Embeddings API**
-> (`https://api.anthropic.com/v1/messages`), which is powered by Voyage AI
+> (`https://api.anthropic.com/v1/embeddings`), which is powered by Voyage AI
 > models (e.g. `voyage-3`, `voyage-3-lite`).  Configure it with an Anthropic
 > API key — not a Voyage AI key.  See the
 > [Anthropic embeddings docs](https://docs.anthropic.com/en/docs/build-with-claude/embeddings)
