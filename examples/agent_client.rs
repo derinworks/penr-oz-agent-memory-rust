@@ -137,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut stored_ids: Vec<String> = Vec::new();
 
-    for (text, tag) in memories {
+    for &(text, tag) in memories {
         let metadata = HashMap::from([("tag".to_string(), tag.to_string())]);
 
         let resp: StoreMemoryResponse = client
@@ -171,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "What is the user's communication style preference?",
     ];
 
-    for query in &queries {
+    for query in queries {
         println!("  query: \"{query}\"");
 
         let resp: SearchMemoryResponse = client
