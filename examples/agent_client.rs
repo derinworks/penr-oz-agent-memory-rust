@@ -237,11 +237,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .post(base_url.join("memory")?)
         .json(&StoreMemoryRequest {
             text: agent_response.to_string(),
-            metadata: {
-                let mut m = HashMap::new();
-                m.insert("tag".to_string(), "agent-response".to_string());
-                m
-            },
+            metadata: HashMap::from([("tag".to_string(), "agent-response".to_string())]),
             session: Some(session.to_string()),
         })
         .send()
