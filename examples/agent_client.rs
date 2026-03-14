@@ -74,10 +74,16 @@ struct HealthResponse {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let base_url: Url = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| DEFAULT_SERVER_URL.to_string())
-        .parse()?;
+    // Ensure the base URL ends with '/' so that Url::join appends paths
+    // rather than replacing the last segment (e.g. "/agent-memory/health"
+    // instead of "/health" when a path prefix is present).
+    let base_url: Url = {
+        let s = std::env::args()
+            .nth(1)
+            .unwrap_or_else(|| DEFAULT_SERVER_URL.to_string());
+        let s = if s.ends_with('/') { s } else { format!("{s}/") };
+        s.parse()?
+    };
 
     println!("Agent Memory Client Demo");
     println!("========================");
@@ -252,13 +258,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Step 5: Memory lifecycle – delete an entry
     // -----------------------------------------------------------------------
     println!("--- Step 5: Memory Lifecycle – Deleting a Memory ---");
-    let id_to_delete = &stored_ids[0];
-    client
-        .delete(base_url.join(&format!("memory/{id_to_delete}"))?)
-        .send()
-        .await?
-        .error_for_status()?;
-    println!("  Deleted memory id={}…", &id_to_delete[..8]);
+    if let Some(id_to_delete) = stored_ids.first() {
+        client
+            .delete(base_url.join(&format!("memory/{id_to_delete}"))?)
+            .send()
+            .await?
+            .error_for_status()?;
+        println!("  Deleted memory id={}…", &id_to_delete[..8]);
+    } else {
+        println!("  No memories were stored, skipping delete.");
+    }
     println!();
 
     // -----------------------------------------------------------------------
