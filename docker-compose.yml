@@ -2,6 +2,7 @@ services:
   qdrant:
     image: qdrant/qdrant:v1.9.2
     container_name: penr-oz-qdrant
+    restart: unless-stopped
     ports:
       - "${QDRANT_PORT:-6333}:6333"   # REST API
       - "${QDRANT_GRPC_PORT:-6334}:6334" # gRPC
@@ -20,6 +21,7 @@ services:
   ollama:
     image: ollama/ollama:0.1.44
     container_name: penr-oz-ollama
+    restart: unless-stopped
     ports:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
