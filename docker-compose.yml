@@ -13,7 +13,7 @@ services:
     networks:
       - memory-net
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:6333/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:6333/healthz || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,7 +31,7 @@ services:
     profiles:
       - ollama   # only started when: docker compose --profile ollama up
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:11434/api/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5

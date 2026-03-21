@@ -25,7 +25,9 @@ for local embeddings.
 cp .env.example .env
 ```
 
-Edit `.env` if you need to change default ports or add API keys.
+Edit `.env` to change default ports or set `QDRANT_API_KEY`. If you change a port, update the corresponding URL in `config.toml` too (e.g. `[qdrant].url` or `[embedding.providers.ollama].base_url`).
+
+> **Note:** `.env` is consumed by Docker Compose for container configuration only. The Rust server (`cargo run`) reads environment variables from the shell — export any server-level vars (e.g. `SESSION_API_KEY`) in your shell, or set them directly in `config.toml`.
 
 ### 2. Start the stack
 
