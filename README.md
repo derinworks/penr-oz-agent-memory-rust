@@ -9,7 +9,81 @@ a Qdrant vector database.
 
 ---
 
-## Quick start
+## Docker Compose development environment
+
+The fastest way to get a fully working memory stack is with Docker Compose.
+It starts a **Qdrant** vector database and, optionally, an **Ollama** instance
+for local embeddings.
+
+### Prerequisites
+
+- [Docker](https://docs.docker.com/get-docker/) with the Compose plugin
+
+### 1. Copy the environment file
+
+```sh
+cp .env.example .env
+```
+
+Edit `.env` to change default ports or set `QDRANT_API_KEY`. If you change a port, update the corresponding URL in `config.toml` too (e.g. `[qdrant].url` or `[embedding.providers.ollama].base_url`).
+
+> **Note:** `.env` is consumed by Docker Compose for container configuration only. The Rust server (`cargo run`) reads environment variables from the shell — export any server-level vars (e.g. `SESSION_API_KEY`) in your shell, or set them directly in `config.toml`.
+
+### 2. Start the stack
+
+**Qdrant only** (use an external Ollama, OpenAI, or Anthropic for embeddings):
+
+```sh
+docker compose up -d
+```
+
+**Qdrant + Ollama** (fully local, no API keys required):
+
+```sh
+docker compose --profile ollama up -d
+```
+
+Qdrant will be available at `http://localhost:6333` and Ollama (if started) at
+`http://localhost:11434`.
+
+### 3. Pull the embedding model (Ollama profile only)
+
+```sh
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+### 4. Enable Qdrant in `config.toml`
+
+Uncomment the `[qdrant]` section so the server connects to the container:
+
+```toml
+[qdrant]
+url        = "http://localhost:6333"
+collection = "agent_memory"
+dimensions = 768
+distance   = "Cosine"
+```
+
+If you are using the Ollama container, the `base_url` in `[embedding.providers.ollama]` should be `http://localhost:11434`.
+
+### 5. Start the server
+
+```sh
+cargo run
+```
+
+The server connects to Qdrant on startup and is ready to accept requests.
+
+### Stopping the stack
+
+```sh
+docker compose down          # stop containers, keep volumes
+docker compose down -v       # stop containers and delete data volumes
+```
+
+---
+
+## Quick start (without Docker)
 
 ### 1. Configure the server
 
