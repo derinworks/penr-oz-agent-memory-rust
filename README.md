@@ -62,8 +62,7 @@ dimensions = 768
 distance   = "Cosine"
 ```
 
-Update `base_url` in `[embedding.providers.ollama]` to `http://localhost:11434`
-if you are using the Ollama container.
+If you are using the Ollama container, the `base_url` in `[embedding.providers.ollama]` should be `http://localhost:11434`.
 
 ### 5. Start the server
 
