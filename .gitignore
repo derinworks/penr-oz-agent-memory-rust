@@ -21,6 +21,16 @@ target
 .idea/
 
 
-# Added by cargo
+# Environment files (may contain secrets)
+.env
+.env.local
+.env.*.local
 
-/target
+# Docker override files (may contain local secrets or port overrides)
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# SQLite database files (session store)
+*.db
+*.db-shm
+*.db-wal
