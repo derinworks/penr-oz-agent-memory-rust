@@ -47,7 +47,7 @@ Qdrant will be available at `http://localhost:6333` and Ollama (if started) at
 ### 3. Pull the embedding model (Ollama profile only)
 
 ```sh
-docker exec penr-oz-ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull nomic-embed-text
 ```
 
 ### 4. Enable Qdrant in `config.toml`
