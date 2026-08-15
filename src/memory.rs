@@ -112,8 +112,14 @@ impl MemoryStore {
         let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
 
         // Min-heap keeps at most `limit` entries; the lowest score is on top
-        // so it can be cheaply evicted when a better candidate arrives.
-        let mut heap = BinaryHeap::<MinScored>::with_capacity(limit + 1);
+        // so it can be cheaply evicted when a better candidate arrives. Cap
+        // the pre-allocation by the number of entries that actually exist:
+        // `limit` is caller-controlled (an HTTP query parameter with no
+        // upper bound) and `limit + 1` alone can overflow or request an
+        // allocation far larger than anything the store could ever return,
+        // aborting the whole process.
+        let heap_capacity = limit.saturating_add(1).min(entries.len().saturating_add(1));
+        let mut heap = BinaryHeap::<MinScored>::with_capacity(heap_capacity);
 
         for e in entries.values() {
             if let Some(s) = session {
@@ -331,6 +337,25 @@ mod tests {
         let results = store.search(&vec![1.0, 0.0], 10, None);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].text, "valid");
+    }
+
+    #[test]
+    fn search_with_huge_limit_does_not_abort() {
+        let store = MemoryStore::new();
+        for i in 1..=3 {
+            store.store(
+                format!("entry {i}"),
+                HashMap::new(),
+                None,
+                vec![i as f32, 1.0],
+            );
+        }
+
+        // A caller-supplied limit this large used to make
+        // `BinaryHeap::with_capacity(limit + 1)` overflow (usize::MAX) or
+        // attempt a multi-exabyte allocation, aborting the whole process.
+        let results = store.search(&vec![1.0, 0.0], usize::MAX, None);
+        assert_eq!(results.len(), 3);
     }
 
     #[test]
