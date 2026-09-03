@@ -26,6 +26,10 @@ target
 .env.local
 .env.*.local
 
+# Local configuration overrides (may contain secrets; merged over config.toml)
+config.local.toml
+*.local.toml
+
 # Docker override files (may contain local secrets or port overrides)
 docker-compose.override.yml
 docker-compose.override.yaml

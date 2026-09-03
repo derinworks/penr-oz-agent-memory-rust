@@ -5,7 +5,7 @@ use axum::{
 };
 use serde_json::json;
 use thiserror::Error;
-use tracing::warn;
+use tracing::{error, warn};
 
 #[derive(Debug, Error)]
 pub enum SessionError {
@@ -76,10 +76,43 @@ pub enum EmbeddingError {
     MemoryNotFound(String),
 }
 
+/// Describe a `reqwest` transport failure including its underlying cause.
+///
+/// Every `EmbeddingError::HttpError` in this crate comes from a `send()` call,
+/// so it means the provider could not be reached at all. `reqwest::Error`'s own
+/// `Display` stops at "error sending request for url (…)" and hides the actual
+/// reason (connection refused, DNS failure, TLS error) in its source chain, so
+/// walk the chain to give operators something actionable.
+fn describe_transport_error(e: &reqwest::Error) -> String {
+    let action = if e.is_timeout() {
+        "timed out"
+    } else {
+        "is unreachable"
+    };
+    let mut message = match e.url() {
+        Some(url) => format!("Embedding provider {action} at {url}"),
+        None => format!("Embedding provider {action}"),
+    };
+    let mut source = std::error::Error::source(e);
+    while let Some(cause) = source {
+        message.push_str(&format!(": {cause}"));
+        source = cause.source();
+    }
+    message
+}
+
 impl IntoResponse for EmbeddingError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
             EmbeddingError::BadRequest(_) => (StatusCode::BAD_REQUEST, self.to_string()),
+            // An unreachable provider is an upstream dependency failure, not an
+            // internal fault of this server: report 502 with the real cause
+            // instead of an opaque 500.
+            EmbeddingError::HttpError(e) => {
+                let message = describe_transport_error(e);
+                error!(error = %message, "Embedding provider request failed");
+                (StatusCode::BAD_GATEWAY, message)
+            }
             EmbeddingError::ProviderNotFound(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             EmbeddingError::AuthenticationError => (StatusCode::UNAUTHORIZED, self.to_string()),
             EmbeddingError::MemoryNotFound(id) => {
@@ -151,5 +184,82 @@ impl IntoResponse for VectorStoreError {
                 (status, Json(json!({ "error": other.to_string() }))).into_response()
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Port 1 is never listening, so this fails at connect time without any
+    /// network access — the same failure mode as `cargo run` with no embedding
+    /// provider running.
+    const UNREACHABLE_URL: &str = "http://127.0.0.1:1/api/embed";
+
+    async fn connect_error() -> reqwest::Error {
+        reqwest::Client::new()
+            .post(UNREACHABLE_URL)
+            .send()
+            .await
+            .expect_err("a request to a closed port must fail")
+    }
+
+    async fn body_error_message(response: Response) -> String {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body");
+        let value: serde_json::Value = serde_json::from_slice(&bytes).expect("json body");
+        value["error"].as_str().expect("error field").to_string()
+    }
+
+    #[tokio::test]
+    async fn unreachable_provider_maps_to_bad_gateway_with_cause() {
+        let response = EmbeddingError::HttpError(connect_error().await).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+
+        let message = body_error_message(response).await;
+        assert!(
+            message.contains("Embedding provider is unreachable"),
+            "message should name the failing dependency: {message}"
+        );
+        assert!(
+            message.contains(UNREACHABLE_URL),
+            "message should include the provider URL: {message}"
+        );
+        // The cause chain, not just reqwest's opaque top-level Display.
+        assert!(
+            message.len() > format!("Embedding provider is unreachable at {UNREACHABLE_URL}").len(),
+            "message should include the underlying cause: {message}"
+        );
+    }
+
+    #[tokio::test]
+    async fn unreachable_provider_maps_to_bad_gateway_through_vector_store_error() {
+        let response =
+            VectorStoreError::Embedding(EmbeddingError::HttpError(connect_error().await))
+                .into_response();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[tokio::test]
+    async fn provider_reported_status_is_still_forwarded() {
+        let response = EmbeddingError::ProviderError {
+            status: 404,
+            message: "model not found".to_string(),
+        }
+        .into_response();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[test]
+    fn not_configured_errors_keep_their_service_unavailable_status() {
+        assert_eq!(
+            VectorStoreError::NotConfigured.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(
+            SessionError::NotConfigured.into_response().status(),
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 }
