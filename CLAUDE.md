@@ -28,7 +28,7 @@ with optional API-key auth. Single binary: `penr-oz-agent-memory` (`src/main.rs`
 | Path | Responsibility |
 |------|---------------|
 | `src/main.rs` | Startup, `Router` wiring, `AppState`; all routes registered here |
-| `src/config.rs` | `Config` from `config.toml` + `QDRANT_*` / `DATABASE_URL` env overrides |
+| `src/config.rs` | `Config` from `config.toml` + git-ignored `config.local.toml` merge + `QDRANT_*` / `DATABASE_URL` env overrides |
 | `src/routes.rs` | All axum handlers, request/response types, session auth helper |
 | `src/memory.rs` | In-memory `MemoryStore` (`/memory` endpoints) |
 | `src/vector_store.rs` | `QdrantStore` (`/api/memory`, `/api/search`) |
@@ -78,6 +78,11 @@ optional). Note `thiserror` is pinned at 1.x here.
   (checked in `src/vector_store.rs`); do not remove or rename those checks.
 - Embedding handlers honour a per-request `?provider=<name>` override; never
   hard-code a provider name in a handler.
+- An embedding provider that cannot be reached (`EmbeddingError::HttpError`,
+  always raised by a `send()` call) surfaces as **502** with the provider URL and
+  the underlying cause; `503` stays reserved for "not configured". A bare
+  `cargo run` with no Ollama running therefore 502s on `/api/embed`, `POST
+  /memory` and `GET /memory/search`.
 - Qdrant `dimensions` must match the embedding model's output (`nomic-embed-text`
   768, `text-embedding-3-small` 1536, `voyage-3` 1024).
 - There are two parallel memory APIs: `/memory*` (in-memory store) and `/api/memory`
